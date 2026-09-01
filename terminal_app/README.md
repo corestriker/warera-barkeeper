@@ -81,20 +81,12 @@ schickt deshalb einen browserähnlichen Agent plus `Origin: https://app.warera.i
 passiert nichts. Wer die Logik anfasst, sollte das im Kopf behalten: eine Minute
 Verschiebung der Zielzeit kann eine ganze Regenerationsstunde kosten oder schenken.
 
-## Modulpfad und Platzhalter
+## Modulpfad
 
-`github.com/yourname/warera-barkeeper` ist ein Platzhalter. Er steht in `go.mod`
-(dort als `yourname`) und in der README (dort als `YOURNAME`) und muss auf das echte
-Repository zeigen, sonst funktionieren `go install` und die Download-Links nicht:
-
-```sh
-cd ..
-sed -i "" "s/YOURNAME/<dein-github-name>/g" README.md
-sed -i "" "s/yourname/<dein-github-name>/g" terminal_app/go.mod
-grep -rn "yourname" terminal_app --include=*.go   # Import-Pfade mitziehen
-```
-
-Die Import-Pfade in allen `.go`-Dateien hängen am Modulpfad und ändern sich mit.
+Der Modulpfad in `go.mod` (`github.com/corestriker/warera-barkeeper/terminal_app`) muss auf
+das echte Repository zeigen, sonst funktionieren `go install` und die Import-Pfade für
+andere nicht. Wird der Repo-Name je geändert, ziehen `go.mod`, alle Import-Pfade in den
+`.go`-Dateien und die Links in der Root-README mit.
 
 ## Release
 

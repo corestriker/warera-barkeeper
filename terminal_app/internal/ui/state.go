@@ -3,9 +3,9 @@ package ui
 import (
 	"time"
 
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/config"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/regen"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/warera"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/config"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/regen"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/warera"
 )
 
 // barOrder legt die Reihenfolge der Anzeige fest.

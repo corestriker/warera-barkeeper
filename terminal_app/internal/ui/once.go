@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/config"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/i18n"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/regen"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/warera"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/config"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/i18n"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/regen"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/warera"
 )
 
 // RenderOnce erzeugt die Berechnung als schmucklosen Text — für Skripte,

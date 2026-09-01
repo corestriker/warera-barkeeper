@@ -91,7 +91,7 @@ If fetching is on but the API does not answer, the config values remain — with
 
 ### Prebuilt binaries
 
-Download the file for your system from the [latest release](https://github.com/YOURNAME/warera-barkeeper/releases/latest):
+Download the file for your system from the [latest release](https://github.com/corestriker/warera-barkeeper/releases/latest):
 
 | System | File |
 |---|---|
@@ -126,7 +126,7 @@ sha256sum -c SHA256SUMS --ignore-missing
 ### With Go
 
 ```sh
-go install github.com/YOURNAME/warera-barkeeper/terminal_app@latest
+go install github.com/corestriker/warera-barkeeper/terminal_app@latest
 ```
 
 The binary is named `terminal_app` this way; rename it to `barkeeper` if you like.
@@ -134,7 +134,7 @@ The binary is named `terminal_app` this way; rename it to `barkeeper` if you lik
 ### From source
 
 ```sh
-git clone https://github.com/YOURNAME/warera-barkeeper.git
+git clone https://github.com/corestriker/warera-barkeeper.git
 cd warera-barkeeper/terminal_app
 make build          # binary for your own system
 make build-all      # all five platforms into dist/

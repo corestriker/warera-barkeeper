@@ -10,10 +10,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/config"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/i18n"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/regen"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/warera"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/config"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/i18n"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/regen"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/warera"
 )
 
 // testCfg ist die Standard-Config mit festgelegter Sprache: die Tests prüfen

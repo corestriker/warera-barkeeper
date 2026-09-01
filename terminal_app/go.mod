@@ -1,4 +1,4 @@
-module github.com/yourname/warera-barkeeper/terminal_app
+module github.com/corestriker/warera-barkeeper/terminal_app
 
 go 1.26.4
 

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/config"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/warera"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/config"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/warera"
 )
 
 func testSnapshot() *warera.Snapshot {

@@ -225,16 +225,17 @@ Pfad-Auflösung: `--config` → `$BARKEEPER_CONFIG` → `os.UserConfigDir()/bark
 
 ## Hinweise
 
-- Der Modulpfad in `go.mod` ist noch ein Platzhalter (`github.com/yourname/warera-barkeeper/terminal_app`),
-  in der README steht derselbe Platzhalter als `YOURNAME`. Beides muss vor einem Release auf das echte
-  Repository zeigen, sonst funktionieren `go install` und die Download-Links nicht.
+- Modulpfad und Repo: `github.com/corestriker/warera-barkeeper`, die App im Unterordner
+  `terminal_app`. Bei einer Umbenennung ziehen `go.mod`, alle Import-Pfade und die Links in der
+  Root-README mit.
 - Die **README im Repo-Root ist englisch** (öffentliches Publikum), Code-Kommentare und die
   Entwickler-Doku (`terminal_app/README.md`, diese Datei) sind deutsch. Wer die README ändert, ändert
   sie auf Englisch.
 - **Releases** baut `.github/workflows/release.yml` aus einem Tag `v*`: `make check`, `make build-all`,
   `SHA256SUMS`, `gh release create`. Die Version im Binary kommt aus `git describe`, deshalb
   `fetch-depth: 0`.
-- Der Arbeitsbaum ist derzeit **kein** Git-Repository — `git`-basierte Abläufe (Diff-Review, `VERSION`
-  aus `git describe`) greifen hier nicht, `make build` fällt auf `VERSION=dev` zurück.
+- **Ein Release entsteht nur aus einem Tag** `v*`; ein Push auf `main` löst nur `check.yml` aus, und
+  `workflow_dispatch` baut ohne zu veröffentlichen. Ohne Tag liefert `git describe --always` den
+  Commit-Hash, `barkeeper --version` zeigt dann etwa `9e68f7f-dirty` statt einer Version.
 - Bewusst nicht implementiert: Umrechnung des Health-Budgets in eine Anzahl Hits. Schaden pro Hit hängt
   am Gear, Ausweichen ist zufällig — jede Zahl wäre geraten.

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/config"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/i18n"
-	"github.com/yourname/warera-barkeeper/terminal_app/internal/warera"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/config"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/i18n"
+	"github.com/corestriker/warera-barkeeper/terminal_app/internal/warera"
 )
 
 func liveSnapshot() *warera.Snapshot {
