@@ -1,0 +1,20 @@
+# go vet, Tests und gofmt bei jedem Push und Pull Request.
+name: check
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: terminal_app/go.mod
+          cache-dependency-path: terminal_app/go.sum
+      - working-directory: terminal_app
+        run: make check

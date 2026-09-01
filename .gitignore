@@ -1,0 +1,20 @@
+# Build-Ergebnisse
+dist/
+barkeeper
+barkeeper.exe
+# `go build .` im Modulordner benennt das Binary nach dem Ordner
+terminal_app/terminal_app
+
+# Go-Werkzeuge
+*.test
+coverage.out
+cover.out
+*.prof
+
+# Editor und OS
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*~

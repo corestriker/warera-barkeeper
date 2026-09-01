@@ -1,0 +1,57 @@
+# Baut die Binaries für alle Plattformen und hängt sie an ein GitHub-Release.
+#
+# Ausgelöst von einem Tag wie v0.2.0. Die Version im Binary kommt aus dem Tag:
+# das Makefile liest sie über `git describe`, deshalb braucht der Checkout die
+# volle Historie samt Tags.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # Für einen Probelauf ohne Tag: baut, veröffentlicht aber nichts.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: terminal_app/go.mod
+          cache-dependency-path: terminal_app/go.sum
+
+      # Nichts veröffentlichen, was die eigenen Prüfungen nicht besteht.
+      - name: check
+        working-directory: terminal_app
+        run: make check
+
+      - name: build
+        working-directory: terminal_app
+        run: make build-all
+
+      - name: checksums
+        working-directory: terminal_app/dist
+        run: sha256sum barkeeper_* > SHA256SUMS
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: barkeeper-binaries
+          path: terminal_app/dist/*
+
+      - name: publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            terminal_app/dist/*
