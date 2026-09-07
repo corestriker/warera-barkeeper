@@ -8,6 +8,17 @@ statische Single-Page-App für GitHub Pages. Was das Werkzeug tut, steht in der
 
 Node 22 oder neuer (`.nvmrc` sagt 24, `nvm use` genügt):
 
+> **`.npmrc` im Projekt ist Absicht.** Sie schreibt
+> `registry=https://registry.npmjs.org/` fest. Ohne sie gilt die Registry aus
+> `~/.npmrc`; ist dort eine interne Registry eingetragen, landen deren Adressen
+> in `package-lock.json`, und der GitHub-Runner scheitert beim Installieren mit
+> `npm error code E401 · Unable to authenticate` — er hat dafür keine
+> Zugangsdaten. Eine Projektdatei sticht die Benutzerdatei, deshalb liegt sie
+> hier. Nach einem Registry-Wechsel gehört die Lockfile komplett neu erzeugt
+> (`rm -rf node_modules package-lock.json && npm install`) — ein einfaches
+> `npm install` übernimmt sonst alte `resolved`-Adressen aus dem vorhandenen
+> `node_modules`.
+
 ```sh
 npm install
 npm run dev        # Entwicklungsserver auf http://localhost:5173/warera-barkeeper/
