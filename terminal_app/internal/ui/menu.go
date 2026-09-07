@@ -32,6 +32,11 @@ type field struct {
 	key  string
 	kind fieldKind
 
+	// sectionID gruppiert die Zeilen. Die Überschrift zeichnet das Menü
+	// selbst, sobald sich die Sektion ändert — dadurch bleibt die Feldliste
+	// eine flache Liste und die Cursor-Logik unberührt.
+	sectionID string
+
 	// labelID und helpID sind Message-IDs, nicht Text: die Sprache kann sich
 	// zur Laufzeit ändern, aufgelöst wird deshalb erst beim Zeichnen.
 	labelID string
@@ -60,10 +65,11 @@ func parseFloat(p i18n.Printer, s string) (float64, error) {
 
 func barField(key, labelID, helpID string, regenField bool) field {
 	return field{
-		key:     key,
-		kind:    fieldText,
-		labelID: labelID,
-		helpID:  helpID,
+		key:       key,
+		sectionID: "menu.s.manual",
+		kind:      fieldText,
+		labelID:   labelID,
+		helpID:    helpID,
 		// Mit Spielername und aktivem Abruf kommen Maximum und Regen-Rate aus
 		// der API. Die Zeilen bleiben sichtbar, sind aber gesperrt: sonst
 		// tippt man Werte ein, die nie benutzt werden.
@@ -99,6 +105,25 @@ func barField(key, labelID, helpID string, regenField bool) field {
 	}
 }
 
+// targetModes ist die Reihenfolge, in der der Schalter die Zielzeit-Quellen
+// durchläuft.
+var targetModes = []string{
+	config.TargetModeClock,
+	config.TargetModeDebuff,
+	config.TargetModeDebuffHour,
+}
+
+func nextTargetMode(cur string) string {
+	for i, mode := range targetModes {
+		if mode == cur {
+			return targetModes[(i+1)%len(targetModes)]
+		}
+	}
+	// Unbekannter Wert verhält sich wie der Standard, also geht es von dort
+	// aus weiter — nicht auf ihn zurück.
+	return targetModes[1%len(targetModes)]
+}
+
 // onOff ist die Anzeige eines Schalters.
 func onOff(p i18n.Printer, v bool) string {
 	if v {
@@ -118,7 +143,7 @@ func languageChoices() []string {
 // „automatisch" zusätzlich die Sprache, die dabei herauskommt.
 func languageField() field {
 	return field{
-		key: "language", kind: fieldToggle,
+		key: "language", sectionID: "menu.s.display", kind: fieldToggle,
 		labelID: "menu.f.language", helpID: "menu.f.language.help",
 		get: func(p i18n.Printer, c *config.Config) string {
 			if c.Language == "" {
@@ -140,25 +165,30 @@ func languageField() field {
 	}
 }
 
+// menuFields ist die Liste der Menüzeilen in Anzeigereihenfolge. Gruppiert
+// wird nach der Frage, wann eine Einstellung überhaupt gilt: die Zielzeit
+// immer, der Abruf nur mit Spielername, die eigenen Werte nur ohne.
 func menuFields() []field {
 	return []field{
 		{
-			key: "username", kind: fieldText,
-			labelID: "menu.f.username", helpID: "menu.f.username.help",
-			get: func(_ i18n.Printer, c *config.Config) string { return c.Username },
-			set: func(_ i18n.Printer, c *config.Config, s string) error {
-				s = strings.TrimSpace(s)
-				if s != c.Username {
-					// Anderer Name, andere ID — den Cache verwerfen.
-					c.UserID = ""
+			key: "target_mode", sectionID: "menu.s.target", kind: fieldToggle,
+			labelID: "menu.f.target_mode", helpID: "menu.f.target_mode.help",
+			get: func(p i18n.Printer, c *config.Config) string {
+				switch c.TargetMode {
+				case config.TargetModeDebuff:
+					return p.T("menu.v.target_debuff")
+				case config.TargetModeDebuffHour:
+					return p.T("menu.v.target_debuff_hour")
 				}
-				c.Username = s
-				return nil
+				return p.T("menu.v.target_clock")
 			},
+			toggle: func(c *config.Config) { c.TargetMode = nextTargetMode(c.TargetMode) },
 		},
 		{
-			key: "target_time", kind: fieldText,
+			key: "target_time", sectionID: "menu.s.target", kind: fieldText,
 			labelID: "menu.f.target_time", helpID: "menu.f.target_time.help",
+			// Im Debuff-Modus ist die Uhrzeit der Rückfall, nicht die Regel —
+			// editierbar bleibt sie deshalb.
 			get: func(_ i18n.Printer, c *config.Config) string { return c.TargetTime },
 			set: func(p i18n.Printer, c *config.Config, s string) error {
 				// Der Fehler aus ParseClock ist technisch; die Meldung für den
@@ -171,7 +201,7 @@ func menuFields() []field {
 			},
 		},
 		{
-			key: "base_mode", kind: fieldToggle,
+			key: "base_mode", sectionID: "menu.s.target", kind: fieldToggle,
 			labelID: "menu.f.base_mode", helpID: "menu.f.base_mode.help",
 			get: func(p i18n.Printer, c *config.Config) string {
 				if c.BaseMode == config.BaseModeFixed {
@@ -188,7 +218,7 @@ func menuFields() []field {
 			},
 		},
 		{
-			key: "base_time", kind: fieldText,
+			key: "base_time", sectionID: "menu.s.target", kind: fieldText,
 			labelID: "menu.f.base_time", helpID: "menu.f.base_time.help",
 			disabled: func(c *config.Config) bool { return c.BaseMode != config.BaseModeFixed },
 			get:      func(_ i18n.Printer, c *config.Config) string { return c.BaseTime },
@@ -201,7 +231,7 @@ func menuFields() []field {
 			},
 		},
 		{
-			key: "timezone", kind: fieldText,
+			key: "timezone", sectionID: "menu.s.target", kind: fieldText,
 			labelID: "menu.f.timezone", helpID: "menu.f.timezone.help",
 			get: func(p i18n.Printer, c *config.Config) string {
 				if c.Timezone == "" {
@@ -224,13 +254,41 @@ func menuFields() []field {
 				return nil
 			},
 		},
-		languageField(),
+		{
+			key: "api_enabled", sectionID: "menu.s.api", kind: fieldToggle,
+			labelID: "menu.f.api", helpID: "menu.f.api.help",
+			get: func(p i18n.Printer, c *config.Config) string {
+				return onOff(p, c.API.Enabled)
+			},
+			toggle: func(c *config.Config) { c.API.Enabled = !c.API.Enabled },
+		},
+
+		{
+			key: "username", sectionID: "menu.s.api", kind: fieldText,
+			labelID: "menu.f.username", helpID: "menu.f.username.help",
+			get: func(_ i18n.Printer, c *config.Config) string { return c.Username },
+			set: func(_ i18n.Printer, c *config.Config, s string) error {
+				s = strings.TrimSpace(s)
+				if s != c.Username {
+					// Anderer Name, andere ID — den Cache verwerfen.
+					c.UserID = ""
+				}
+				c.Username = s
+				return nil
+			},
+		},
+		{
+			key: "fetch", sectionID: "menu.s.api", kind: fieldAction,
+			labelID: "menu.f.fetch", helpID: "menu.f.fetch.help", action: actionFetch,
+			disabled: func(c *config.Config) bool { return !APIMode(*c) },
+		},
 		barField("health.max", "menu.f.health_max", "menu.help.manual", false),
 		barField("health.regen", "menu.f.health_regen", "menu.help.regen", true),
 		barField("hunger.max", "menu.f.hunger_max", "menu.help.manual", false),
 		barField("hunger.regen", "menu.f.hunger_regen", "menu.help.regen", true),
+		languageField(),
 		{
-			key: "hint_window", kind: fieldText,
+			key: "hint_window", sectionID: "menu.s.display", kind: fieldText,
 			labelID: "menu.f.hint_window", helpID: "menu.f.hint_window.help",
 			get: func(_ i18n.Printer, c *config.Config) string {
 				return strconv.Itoa(c.HintWindowMinutes)
@@ -245,15 +303,7 @@ func menuFields() []field {
 			},
 		},
 		{
-			key: "api_enabled", kind: fieldToggle,
-			labelID: "menu.f.api", helpID: "menu.f.api.help",
-			get: func(p i18n.Printer, c *config.Config) string {
-				return onOff(p, c.API.Enabled)
-			},
-			toggle: func(c *config.Config) { c.API.Enabled = !c.API.Enabled },
-		},
-		{
-			key: "show_intro", kind: fieldToggle,
+			key: "show_intro", sectionID: "menu.s.display", kind: fieldToggle,
 			labelID: "menu.f.show_intro", helpID: "menu.f.show_intro.help",
 			get: func(p i18n.Printer, c *config.Config) string {
 				return onOff(p, c.ShowIntroOnStart)
@@ -261,16 +311,11 @@ func menuFields() []field {
 			toggle: func(c *config.Config) { c.ShowIntroOnStart = !c.ShowIntroOnStart },
 		},
 		{
-			key: "fetch", kind: fieldAction,
-			labelID: "menu.f.fetch", helpID: "menu.f.fetch.help", action: actionFetch,
-			disabled: func(c *config.Config) bool { return !APIMode(*c) },
-		},
-		{
-			key: "save", kind: fieldAction,
+			key: "save", sectionID: "menu.s.config", kind: fieldAction,
 			labelID: "menu.f.save", helpID: "menu.f.save.help", action: actionSave,
 		},
 		{
-			key: "reset", kind: fieldAction,
+			key: "reset", sectionID: "menu.s.config", kind: fieldAction,
 			labelID: "menu.f.reset", helpID: "menu.f.reset.help",
 			action: actionReset,
 		},
@@ -308,6 +353,16 @@ func (mm *menuModel) syncFromConfig() {
 }
 
 func (mm menuModel) current() field { return mm.fields[mm.cursor] }
+
+// focus stellt den Cursor auf eine Zeile. Gibt es sie nicht, bleibt er stehen.
+func (mm *menuModel) focus(key string) {
+	for i, f := range mm.fields {
+		if f.key == key {
+			mm.cursor = i
+			return
+		}
+	}
+}
 
 // moveCursor springt über deaktivierte Zeilen hinweg.
 func (mm *menuModel) moveCursor(cfg *config.Config, delta int) {
@@ -471,6 +526,13 @@ func (m Model) resetConfig() Model {
 	return m
 }
 
+// debuffDrivesTarget sagt, ob gerade ein laufender Pillen-Debuff die Zielzeit
+// bestimmt — dann ist die eingetragene Uhrzeit nur der Rückfall.
+func (m Model) debuffDrivesTarget() bool {
+	return m.cfg.TargetMode != config.TargetModeClock &&
+		!debuffEnd(m.snap, m.now).IsZero()
+}
+
 // apiBarValue liefert zu einer Leisten-Zeile („health.max") den Wert aus dem
 // letzten Abruf. ok ist false, wenn es keinen gibt — dann ist der Abruf noch
 // unterwegs oder fehlgeschlagen.
@@ -503,11 +565,6 @@ func (m Model) viewMenu() string {
 	mm := m.menu
 	cfg := m.cfg
 
-	var b strings.Builder
-	b.WriteString(styTitle.Render(m.t("menu.title")))
-	b.WriteString(styMuted.Render("   " + cfg.Path()))
-	b.WriteString("\n\n")
-
 	labelW := 0
 	for _, f := range mm.fields {
 		if n := len([]rune(m.t(f.labelID))); n > labelW {
@@ -515,7 +572,22 @@ func (m Model) viewMenu() string {
 		}
 	}
 
+	// Erst alle Zeilen bauen, dann zuschneiden: mit Abschnitten ist das Menü
+	// länger als ein kleines Terminal, und die Cursor-Zeile muss sichtbar
+	// bleiben.
+	var rows []string
+	cursorRow := 0
+	section := ""
+
 	for i, f := range mm.fields {
+		if f.sectionID != section {
+			section = f.sectionID
+			if len(rows) > 0 {
+				rows = append(rows, "")
+			}
+			rows = append(rows, m.sectionTitle(f.sectionID))
+		}
+
 		disabled := f.disabled != nil && f.disabled(&cfg)
 		cursor := "  "
 		if i == mm.cursor {
@@ -553,18 +625,33 @@ func (m Model) viewMenu() string {
 			}
 		default:
 			value = styText.Render(f.get(m.p, &cfg))
+			// Solange ein Debuff die Zielzeit setzt, ist die eingetragene
+			// Uhrzeit nur der Rückfall — sonst hielte man sie für die aktive.
+			if f.key == "target_time" && m.debuffDrivesTarget() {
+				value += styMuted.Render("   " + m.t("menu.v.fallback"))
+			}
 		}
 
-		b.WriteString(cursor + label + "  " + value + "\n")
+		if i == mm.cursor {
+			cursorRow = len(rows)
+		}
+		rows = append(rows, cursor+label+"  "+value)
+
 		if i == mm.cursor && f.helpID != "" {
 			indent := "    " + strings.Repeat(" ", labelW)
 			for _, line := range wrap(m.t(f.helpID), w-len([]rune(indent))) {
-				b.WriteString(indent + styMuted.Render(line) + "\n")
+				rows = append(rows, indent+styMuted.Render(line))
 			}
 		}
 	}
 
-	b.WriteString("\n")
+	var b strings.Builder
+	b.WriteString(styTitle.Render(m.t("menu.title")))
+	b.WriteString(styMuted.Render("   " + cfg.Path()))
+	b.WriteString("\n\n")
+	b.WriteString(strings.Join(m.windowRows(rows, cursorRow), "\n"))
+	b.WriteString("\n\n")
+
 	if mm.err != "" {
 		b.WriteString(styErr.Render(mm.err) + "\n\n")
 	} else if s := m.statusLine(); s != "" {
@@ -586,4 +673,52 @@ func (m Model) viewMenu() string {
 		))
 	}
 	return lipgloss.NewStyle().Padding(1, 1).Render(b.String())
+}
+
+// sectionTitle ist die Überschrift eines Abschnitts. Die eigenen Werte tragen
+// einen Vermerk, wenn gerade der Abruf gilt — sonst stellt man dort Zahlen
+// ein, die niemand benutzt.
+func (m Model) sectionTitle(id string) string {
+	title := styTitle.Render(m.t(id))
+	switch {
+	case id == "menu.s.manual" && APIMode(m.cfg):
+		return title + styMuted.Render("   "+m.t("menu.s.manual.unused"))
+	case id == "menu.s.api" && !APIMode(m.cfg):
+		return title + styMuted.Render("   "+m.t("menu.s.api.off"))
+	}
+	return title
+}
+
+// windowRows schneidet die Zeilenliste auf die Terminalhöhe zu und hält die
+// Cursor-Zeile im Bild. Ist die Höhe unbekannt (Tests, Pipes), bleibt alles
+// stehen.
+func (m Model) windowRows(rows []string, cursor int) []string {
+	// Kopf, Statuszeile, Fußzeile und Rahmen brauchen ebenfalls Platz.
+	const chrome = 8
+	limit := m.height - chrome
+	if m.height <= 0 || limit >= len(rows) || limit < 4 {
+		return rows
+	}
+
+	start := cursor - limit/2
+	if start < 0 {
+		start = 0
+	}
+	if start+limit > len(rows) {
+		start = len(rows) - limit
+	}
+
+	out := make([]string, 0, limit)
+	if start > 0 {
+		out = append(out, styMuted.Render(m.t("menu.more_above", start)))
+	}
+	end := start + limit
+	if rest := len(rows) - end; rest > 0 {
+		end--
+	}
+	out = append(out, rows[start:end]...)
+	if rest := len(rows) - end; rest > 0 {
+		out = append(out, styMuted.Render(m.t("menu.more_below", rest)))
+	}
+	return out
 }

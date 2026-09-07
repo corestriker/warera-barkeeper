@@ -267,7 +267,9 @@ func (m Model) leaveOverlay() Model {
 	if m.firstRun {
 		m.firstRun = false
 		m.menu.syncFromConfig()
-		m.menu.cursor = 0
+		// Der Spielername ist der erste Schritt, steht aber im zweiten
+		// Abschnitt — der Cursor geht direkt dorthin.
+		m.menu.focus("username")
 		m.screen = screenMenu
 		m.setStatus(m.t("status.first_run"), false)
 		return m
@@ -394,6 +396,18 @@ func (m Model) statusLine() string {
 
 // Config gibt die (womöglich im Menü geänderte) Config zurück.
 func (m Model) Config() config.Config { return m.cfg }
+
+// fmtDurationShort ist fmtDuration ohne Sekunden — für Fristen, bei denen die
+// Sekunde nichts entscheidet und der Platz knapp ist.
+func fmtDurationShort(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if h := int(d.Hours()); h > 0 {
+		return fmt.Sprintf("%dh %02dm", h, int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%dm", int(d.Minutes()))
+}
 
 func fmtDuration(d time.Duration) string {
 	if d < 0 {

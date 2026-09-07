@@ -21,6 +21,11 @@ func (m Model) viewDashboard() string {
 	b.WriteString(m.renderHeader(st, w))
 	b.WriteString("\n\n")
 
+	if line := m.renderDebuff(st, w); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
 	for _, br := range res.Bars {
 		b.WriteString(m.renderBar(br, w))
 		b.WriteString("\n")
@@ -63,11 +68,52 @@ func (m Model) renderHeader(st State, w int) string {
 		basis = m.t("head.base_fixed")
 	}
 
-	line1 := fmt.Sprintf("%s %s   %s %s   %s %s",
-		styMuted.Render(m.t("head.target")), styTitle.Render(target.Format("15:04")),
-		styMuted.Render(m.t("head.left")), styText.Render(fmtDuration(remaining)),
-		styMuted.Render(m.t("head.base")), styText.Render(basis+" "+base.Format("15:04")),
-	)
+	// Kommt die Zielzeit aus dem Debuff, sagt das Label das — sonst hielte man
+	// eine fremde Uhrzeit für die eingestellte. Im Debuff-Modus ohne aktiven
+	// Debuff wird umgekehrt der Rückfall vermerkt.
+	targetLabel := m.t("head.target")
+	targetNote, notePlain := "", ""
+	switch {
+	case st.Target == TargetFromDebuff:
+		targetLabel = m.t("head.debuff_end")
+	case st.Target == TargetFromDebuffTick:
+		targetLabel = m.t("head.target_after_debuff")
+	case m.cfg.TargetMode != config.TargetModeClock && APIMode(m.cfg):
+		// Modus steht auf Debuff, es läuft aber keiner: der Rückfall auf die
+		// Uhrzeit muss sichtbar sein. Ohne Abruf kann von einem Debuff
+		// niemand wissen — dort wäre der Vermerk nur Lärm.
+		note := " " + m.t("head.no_debuff")
+		targetNote, notePlain = styMuted.Render(note), note
+	}
+
+	// Die erste Zeile muss in eine Zeile passen — ein Umbruch mitten in
+	// „Basis jetzt 08:34" liest sich wie ein Fehler. Wird es eng, fallen die
+	// verzichtbaren Teile weg: erst die Pillen-Codes, dann die Basis.
+	head := func(withNote, withBase bool) (string, int) {
+		txt := styMuted.Render(targetLabel) + " " + styTitle.Render(target.Format("15:04"))
+		plain := len([]rune(targetLabel)) + 1 + 5
+		if withNote && targetNote != "" {
+			txt += targetNote
+			plain += len([]rune(notePlain))
+		}
+		txt += "   " + styMuted.Render(m.t("head.left")) + " " + styText.Render(fmtDuration(remaining))
+		plain += 3 + len([]rune(m.t("head.left"))) + 1 + len([]rune(fmtDuration(remaining)))
+		if withBase {
+			base := basis + " " + base.Format("15:04")
+			txt += "   " + styMuted.Render(m.t("head.base")) + " " + styText.Render(base)
+			plain += 3 + len([]rune(m.t("head.base"))) + 1 + len([]rune(base))
+		}
+		return txt, plain
+	}
+
+	line1, _ := head(true, true)
+	for _, try := range [][2]bool{{true, true}, {false, true}, {false, false}} {
+		txt, plain := head(try[0], try[1])
+		line1 = txt
+		if plain <= w-4 {
+			break
+		}
+	}
 
 	nextTick := regen.TickAfter(st.Params, m.now).In(loc)
 	line2 := fmt.Sprintf("%s %s %s   %s",
@@ -105,6 +151,45 @@ func (m Model) renderHeader(st State, w int) string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styBox.Width(w).Render(body)
+}
+
+// renderDebuff meldet einen laufenden Pillen-Debuff samt Restzeit — und ob
+// die Zielzeit daran hängt.
+//
+// Angezeigt wird er in jedem Modus: hängt die Zielzeit daran, ist die Restzeit
+// die eigentliche Frist; hängt sie nicht daran, ist er die Alternative, die
+// einen Tastendruck weit weg im Menü liegt.
+func (m Model) renderDebuff(st State, w int) string {
+	if st.DebuffEnd.IsZero() {
+		return ""
+	}
+
+	clock := st.DebuffEnd.Format("15:04")
+	left := fmtDurationShort(st.DebuffEnd.Sub(m.now))
+
+	// Jede Fassung sagt nur, was im Kopf nicht schon steht: hängt die Zielzeit
+	// direkt am Debuff, nennt der Kopf dessen Uhrzeit — dann bleibt hier die
+	// Restzeit. Sonst gehört die Uhrzeit hierher. Das hält die Zeile auf
+	// üblichen Breiten einzeilig.
+	var txt string
+	style := styMuted
+
+	if st.Target == TargetFromDebuff {
+		txt, style = m.t("dash.debuff_basis", left), styHint
+	} else {
+		txt = m.t("dash.debuff", clock, left)
+		if st.Target == TargetFromDebuffTick {
+			txt += " " + m.t("dash.debuff_hour")
+			style = styHint
+		}
+	}
+
+	lines := wrap(txt, w-4)
+	for i, l := range lines {
+		lines[i] = style.Render(l)
+	}
+	return lipgloss.NewStyle().Padding(0, 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left, lines...)) + "\n"
 }
 
 // legendEntry ist ein Eintrag der Balken-Legende: Musterzeichen, Bedeutung und

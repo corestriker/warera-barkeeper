@@ -37,8 +37,15 @@ func RenderOnce(cfg config.Config) string {
 	loc := cfg.Location()
 
 	var b strings.Builder
+	targetLabel := p.T("head.target")
+	switch st.Target {
+	case TargetFromDebuff:
+		targetLabel = p.T("head.debuff_end")
+	case TargetFromDebuffTick:
+		targetLabel = p.T("head.target_after_debuff")
+	}
 	fmt.Fprintf(&b, "%s %s   %s %s   %s %s\n",
-		p.T("head.target"), st.Params.Target.In(loc).Format("15:04"),
+		targetLabel, st.Params.Target.In(loc).Format("15:04"),
 		p.T("head.left"), fmtDuration(st.Params.Target.Sub(now)),
 		p.T("head.base"), st.Params.Base.In(loc).Format("15:04"))
 	fmt.Fprintf(&b, "%s %s\n",

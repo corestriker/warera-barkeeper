@@ -89,6 +89,17 @@ func (m Model) viewHelp() string {
 		}
 		b.WriteString("  " + styKey.Render(pad(m.t("help.values.fetch"), infoW)) + "  " +
 			styMuted.Render(abruf) + "\n")
+
+		// Der Debuff steht hier, weil er die Zielzeit setzen kann — auch dann,
+		// wenn der Modus gerade auf Uhrzeit steht.
+		debuff := m.t("help.values.no_debuff")
+		if m.snap != nil {
+			if end := m.snap.User.Buffs.DebuffEndAt; end.After(m.now) {
+				debuff = end.In(m.cfg.Location()).Format("15:04:05")
+			}
+		}
+		b.WriteString("  " + styKey.Render(pad(m.t("help.values.debuff"), infoW)) + "  " +
+			styMuted.Render(debuff) + "\n")
 	} else {
 		b.WriteString("  " + styKey.Render(pad(m.t("help.values.source"), infoW)) + "  " +
 			styMuted.Render(m.t("help.values.manual")) + "\n")

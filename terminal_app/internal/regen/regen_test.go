@@ -415,3 +415,27 @@ func TestComputeFuelltFullAt(t *testing.T) {
 		t.Errorf("ohne Ist-Wert soll FullAt leer sein, ist %v", bare.FullAt)
 	}
 }
+
+// Eine Ereignis-Zielzeit wird auf den Tick danach gehoben, mit Sicherheitsabstand.
+func TestTargetAfterTick(t *testing.T) {
+	p := paramsAt(clock(berlin, 8, 36), clock(berlin, 14, 5))
+
+	tests := []struct {
+		name string
+		in   time.Time
+		want time.Time
+	}{
+		// Debuff endet mitten in der Stunde: der 15:00-Tick zählt, plus 5 Minuten.
+		{"mitten in der Stunde", clock(berlin, 14, 34), clock(berlin, 15, 5)},
+		// Genau auf dem Tick: dieser Tick zählt, es wird keine Stunde verschenkt.
+		{"genau auf einem Tick", clock(berlin, 15, 0), clock(berlin, 15, 5)},
+		// Eine Sekunde nach dem Tick: der nächste ist gemeint.
+		{"kurz nach einem Tick", clock(berlin, 15, 0).Add(time.Second), clock(berlin, 16, 5)},
+	}
+	for _, tc := range tests {
+		if got := TargetAfterTick(p, tc.in); !got.Equal(tc.want) {
+			t.Errorf("%s: TargetAfterTick(%s) = %s, want %s",
+				tc.name, tc.in.Format("15:04:05"), got.Format("15:04"), tc.want.Format("15:04"))
+		}
+	}
+}

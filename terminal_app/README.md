@@ -51,6 +51,13 @@ Die Palette in `theme.go` ist aus dem Stylesheet von `app.warera.io` übernommen
 Terminal-Hintergrundbild uns nicht gehört, ist jede Farbe ein `AdaptiveColor`: `Dark` ist
 der Originalwert, `Light` dessen abgedunkelte Entsprechung.
 
+## Menü
+
+Die Zeilen tragen eine `sectionID`; die Überschriften zeichnet `viewMenu` beim Wechsel. Gruppiert
+wird danach, **wann** eine Einstellung gilt — Zielzeit immer, Abruf nur mit Spielername, eigene
+Werte nur ohne. `windowRows` schneidet die Liste auf `m.height` zu, damit sie auf kleinen Terminals
+nicht überläuft; bei Höhe 0 (Tests) bleibt alles stehen.
+
 ## Sprachen
 
 Alles, was der Nutzer liest, kommt aus `internal/i18n`. In der Oberfläche gilt:

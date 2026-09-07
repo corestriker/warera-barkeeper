@@ -15,6 +15,16 @@ const (
 // HintOffset ist der Sicherheitsabstand, um den der Vorschlag hinter dem Tick liegt.
 const HintOffset = 5 * time.Minute
 
+// TargetAfterTick liefert eine Zielzeit, die den Tick um t herum verlässlich
+// mitnimmt: den ersten Tick auf oder nach t, plus HintOffset.
+//
+// Gedacht für eine Zielzeit, die aus einem Ereignis kommt (Ende des
+// Pillen-Debuffs) und auf das Tick-Raster gehoben werden soll. Der Zuschlag
+// ist nicht Kosmetik: genau auf dem Tick wäre die Gutschrift ein Münzwurf.
+func TargetAfterTick(p Params, t time.Time) time.Time {
+	return TickAtOrAfter(p, t).Add(HintOffset)
+}
+
 // Hint schlägt eine minimal verschobene Zielzeit vor, die einen weiteren Tick
 // mitnimmt. Das ist der eigentliche Trick am Regen in Stunden-Ticks: fünf
 // Minuten später anfangen zu wollen kann eine ganze Regenerationsstunde

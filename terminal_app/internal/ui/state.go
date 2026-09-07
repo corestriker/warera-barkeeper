@@ -23,7 +23,30 @@ type State struct {
 	Bars    []regen.Bar
 	Current map[string]float64
 	Live    bool // true, wenn die Werte aus der API stammen
+
+	// Target sagt, woher die Zielzeit kommt.
+	Target TargetSource
+
+	// DebuffEnd ist das Ende eines laufenden Pillen-Debuffs — unabhängig
+	// davon, ob die Zielzeit daran hängt. Das Hauptfenster zeigt ihn auch im
+	// Uhrzeit-Modus an, weil er dort die Alternative ist.
+	//
+	// Welche Pille es war, steht in der API (buffs.debuffCodes), wird aber
+	// nicht angezeigt: „Pillen-Debuff" sagt alles, was für die Rechnung zählt.
+	DebuffEnd time.Time
 }
+
+// TargetSource ist die Herkunft der Zielzeit.
+type TargetSource int
+
+const (
+	// TargetFromClock: die eingestellte Uhrzeit.
+	TargetFromClock TargetSource = iota
+	// TargetFromDebuff: das Ende des Pillen-Debuffs, unverändert.
+	TargetFromDebuff
+	// TargetFromDebuffTick: der Tick nach dem Debuff-Ende plus Sicherheitsabstand.
+	TargetFromDebuffTick
+)
 
 // APIMode sagt, ob mit API-Werten gerechnet wird: dafür braucht es einen
 // Spielernamen und einen eingeschalteten Abruf.
@@ -58,16 +81,35 @@ func buildState(cfg config.Config, snap *warera.Snapshot, now time.Time) State {
 		target = regen.NextOccurrence(base, h, m)
 	}
 
+	// Das Tick-Raster steht vor der Zielzeit, weil die Debuff-Variante
+	// „nächste Stunde" darauf aufsetzt.
 	anchor := regen.NextWholeHourUTC(now)
 	if snap != nil && !snap.NextRegenAt.IsZero() {
 		anchor = snap.NextRegenAt
 	}
-
 	st.Params = regen.Params{
 		Base:       base,
 		Target:     target,
 		TickAnchor: anchor,
 		TickPeriod: regen.DefaultTickPeriod,
+	}
+
+	// Zielzeit aus dem Pillen-Debuff: bis dahin bringt die nächste Pille
+	// nichts, und genau dann sollen die Leisten voll sein. Der Wert ist ein
+	// absoluter Zeitpunkt, kein Uhrzeit-Muster — er braucht deshalb kein
+	// NextOccurrence. Ohne aktiven Debuff (fehlend, abgelaufen, kein Abruf)
+	// bleibt es bei der eingestellten Uhrzeit.
+	if end := debuffEnd(snap, now); !end.IsZero() {
+		st.DebuffEnd = end.In(loc)
+
+		switch cfg.TargetMode {
+		case config.TargetModeDebuff:
+			st.Params.Target = st.DebuffEnd
+			st.Target = TargetFromDebuff
+		case config.TargetModeDebuffHour:
+			st.Params.Target = regen.TargetAfterTick(st.Params, end).In(loc)
+			st.Target = TargetFromDebuffTick
+		}
 	}
 
 	useAPI := APIMode(cfg) && snap != nil
@@ -91,6 +133,17 @@ func buildState(cfg config.Config, snap *warera.Snapshot, now time.Time) State {
 	}
 
 	return st
+}
+
+// debuffEnd liefert das Ende eines noch laufenden Debuffs, sonst den Nullwert.
+func debuffEnd(snap *warera.Snapshot, now time.Time) time.Time {
+	if snap == nil {
+		return time.Time{}
+	}
+	if end := snap.User.Buffs.DebuffEndAt; end.After(now) {
+		return end
+	}
+	return time.Time{}
 }
 
 func skillFor(snap *warera.Snapshot, key string) (warera.Skill, bool) {

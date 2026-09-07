@@ -37,6 +37,7 @@ type Config struct {
 	Username string `toml:"username"`
 	UserID   string `toml:"user_id"`
 
+	TargetMode string `toml:"target_mode"`
 	TargetTime string `toml:"target_time"`
 	Timezone   string `toml:"timezone"`
 	Language   string `toml:"language"`
@@ -60,6 +61,18 @@ const (
 	BaseModeFixed = "fixed"
 )
 
+// TargetMode-Werte: woher die Zielzeit kommt.
+const (
+	// TargetModeClock nimmt target_time, also eine feste Uhrzeit.
+	TargetModeClock = "clock"
+	// TargetModeDebuff nimmt das Ende des Pillen-Debuffs aus der API und
+	// fällt ohne aktiven Debuff auf target_time zurück.
+	TargetModeDebuff = "debuff"
+	// TargetModeDebuffHour hebt das Debuff-Ende auf den Tick danach: für wen
+	// die Pille sowieso zur runden Stunde dran ist, zählt damit ein Tick mehr.
+	TargetModeDebuffHour = "debuff_hour"
+)
+
 // Leisten-Keys.
 const (
 	BarHealth = "health"
@@ -69,6 +82,10 @@ const (
 // Default liefert eine Config mit sinnvollen Startwerten.
 func Default() Config {
 	return Config{
+		// Debuff als Standard: läuft einer, ist sein Ende die interessante
+		// Frist; läuft keiner, gilt ohnehin target_time. Ohne Spielernamen
+		// bleibt es immer bei der Uhrzeit.
+		TargetMode:        TargetModeDebuff,
 		TargetTime:        "14:05",
 		BaseMode:          BaseModeNow,
 		BaseTime:          "07:00",
@@ -157,6 +174,12 @@ func (c *Config) Normalize() {
 	if c.BaseMode != BaseModeFixed {
 		c.BaseMode = BaseModeNow
 	}
+	switch c.TargetMode {
+	case TargetModeDebuff, TargetModeDebuffHour:
+		// bleibt
+	default:
+		c.TargetMode = TargetModeClock
+	}
 	if c.HintWindowMinutes < 0 {
 		c.HintWindowMinutes = 0
 	}
@@ -244,6 +267,14 @@ const header = `# War Era - Barkeeper — Health- und Hunger-Rechner fuer WarEra
 #
 # username            Spielername; wird einmalig zu einer user_id aufgeloest.
 #                     Leer lassen fuer den rein manuellen Betrieb.
+# target_mode         Standard ist "debuff".
+#                     "clock"       nimmt target_time
+#                     "debuff"      nimmt das Ende des Pillen-Debuffs aus der
+#                                   API (braucht einen Spielernamen)
+#                     "debuff_hour" hebt das Debuff-Ende auf den Tick danach
+#                                   plus 5 Minuten — ein Tick mehr Budget,
+#                                   dafuer spaeter dran
+#                     Ohne aktiven Debuff gilt wieder target_time.
 # target_time         HH:MM lokal, Zeitpunkt an dem alles wieder voll sein soll.
 #                     Fuenf Minuten nach einer vollen Stunde ist fast immer die
 #                     bessere Wahl als die volle Stunde selbst.

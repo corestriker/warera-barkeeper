@@ -16,10 +16,21 @@ type Skill struct {
 	HourlyBarRegen float64 `json:"hourlyBarRegen"`
 }
 
+// Buffs beschreibt die aktiven Effekte. Für uns zählt das Ende des
+// Pillen-Debuffs: bis dahin lohnt es nicht, Pillen zu nehmen, und genau dann
+// sollen die Leisten wieder voll sein.
+//
+// Ist kein Debuff aktiv, fehlt debuffEndAt oder liegt in der Vergangenheit.
+type Buffs struct {
+	DebuffCodes []string  `json:"debuffCodes"`
+	DebuffEndAt time.Time `json:"debuffEndAt"`
+}
+
 // UserLite ist der für uns relevante Ausschnitt aus user.getUserLite.
 type UserLite struct {
 	ID       string `json:"_id"`
 	Username string `json:"username"`
+	Buffs    Buffs  `json:"buffs"`
 	Skills   struct {
 		Health Skill `json:"health"`
 		Hunger Skill `json:"hunger"`
