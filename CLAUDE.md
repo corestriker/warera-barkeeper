@@ -4,10 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was das ist
 
-**War Era - Barkeeper** ist ein Terminal-Tool (Go + Bubble Tea) für das Browserspiel [WarEra](https://warera.io). Es
-beantwortet eine Frage: wie weit darf ich Health und Hunger leerspielen, damit sie zu einer Zielzeit
-wieder auf 100 % stehen? Der Repo-Root ist absichtlich leer gehalten — die App liegt unter
-`terminal_app/`, damit später ein `web_app/` mit derselben Mechanik daneben passt.
+**War Era - Barkeeper** beantwortet für das Browserspiel [WarEra](https://warera.io) eine Frage: wie weit
+darf ich Health und Hunger leerspielen, damit sie zu einer Zielzeit wieder auf 100 % stehen? Es gibt
+zwei Oberflächen für dieselbe Rechnung, jede in ihrem Unterordner — der Repo-Root bleibt leer:
+
+- `terminal_app/` — die Konsolenanwendung (Go + Bubble Tea), die Urfassung.
+- `web_app/` — dieselbe Fachlichkeit als statische Single-Page-App (React + TypeScript + Tailwind),
+  veröffentlicht auf GitHub Pages.
+
+**Die Rechenlogik steht deshalb zweimal da** (`terminal_app/internal/regen` in Go,
+`web_app/src/lib` in TypeScript). Das ist bewusst so — ein WASM-Build hätte die Go-Runtime in jede
+Seitenladung geschleppt —, aber es ist die Gefahrenstelle des Projekts: **wer an der Tick-Mechanik
+etwas ändert, ändert beide Seiten und beide Testsuiten.** Die Testfälle sind gegenseitig portiert und
+tragen dieselben Namen.
 
 Der Anzeigename steht als `ui.AppName` in `internal/ui/theme.go` und wird von Intro, Dashboard und
 `--version` benutzt. **Binary, Modulname und Config-Verzeichnis heißen weiterhin `barkeeper`** — die
@@ -18,7 +27,7 @@ Test-Namen. Neuer Code hält das bei; nur Identifier bleiben englisch.
 
 ## Befehle
 
-Alles läuft aus `terminal_app/` (dort liegen `go.mod` und das `Makefile`):
+Die Terminal-App läuft aus `terminal_app/` (dort liegen `go.mod` und das `Makefile`):
 
 ```sh
 cd terminal_app
@@ -42,6 +51,24 @@ Manuell prüfen, ohne die TUI zu starten (rechnet einmal und gibt Text aus):
 ```sh
 go run . --once
 BARKEEPER_CONFIG=/tmp/bk.toml go run . --once   # mit isolierter Config
+```
+
+Die Webapp läuft aus `web_app/` (Node 22+, `.nvmrc` sagt 24):
+
+```sh
+cd web_app
+npm install
+npm run dev        # Entwicklungsserver auf http://localhost:5173/warera-barkeeper/
+npm run check      # tsc --noEmit + vitest run + vite build — das Pflicht-Gate
+npm run test       # nur Tests
+npm run build      # Produktions-Build nach dist/
+```
+
+Einen einzelnen Web-Test laufen lassen:
+
+```sh
+npx vitest run src/lib/regen.test.ts
+npx vitest run -t 'Zielzeit exakt auf einem Tick'
 ```
 
 ## Architektur
@@ -133,6 +160,28 @@ und Regen-Werte) und `gameConfig.getDates` (Tick-Anchor). Alles öffentlich und 
 keine Zugangsdaten, keine Schreibzugriffe — diese Eigenschaft ist ein Versprechen der README und darf
 nicht aufgeweicht werden.
 
+### Zielzeit: Uhrzeit oder Pillen-Debuff
+
+`cfg.TargetMode` entscheidet, woher `Params.Target` kommt. **Default ist `TargetModeDebuff`**: läuft
+einer, ist sein Ende die interessante Frist; läuft keiner, gilt ohnehin die Uhrzeit.
+
+- `TargetModeClock`: `regen.NextOccurrence` auf `cfg.TargetTime` — eine Wanduhrzeit, die bei Bedarf
+  auf morgen rollt.
+- `TargetModeDebuff`: `snap.User.Buffs.DebuffEndAt` aus `user.getUserLite`. Das ist ein **absoluter
+  Zeitpunkt**, kein Uhrzeit-Muster — kein `NextOccurrence`, keine Tagesrolle.
+- `TargetModeDebuffHour`: `regen.TargetAfterTick(params, end)` — der erste Tick **auf oder nach** dem
+  Debuff-Ende plus `HintOffset`. Für wen die Pille zur runden Stunde dran ist: ein Tick mehr Budget
+  gegen eine halbe Stunde Wartezeit. Genau 15:00 als Ziel wäre sinnlos (derselbe Tick-Satz wie 14:34)
+  und der 15:00-Tick ein Münzwurf — deshalb die fünf Minuten.
+
+`State.Target` (`TargetFromClock`/`FromDebuff`/`FromDebuffTick`) sagt, welcher Weg gegriffen hat.
+Liegt das Debuff-Ende in der Vergangenheit, fehlt es oder gibt es keinen Snapshot, bleibt es bei der
+Uhrzeit. Der Kopf beschriftet jeden Fall: `Debuff-Ende 14:34`, `Ziel nach Debuff 15:05`,
+`Ziel 14:05 (kein Debuff aktiv)` — letzteres nur im API-Modus, denn ohne Abruf kann von einem Debuff
+niemand wissen. Im Menü markiert `debuffDrivesTarget` die Zielzeit-Zeile als „Rückfall", solange ein
+Debuff die Zielzeit setzt. Weil das Tick-Raster für `DebuffHour` gebraucht wird, steht `st.Params` in
+`buildState` **vor** der Zielzeit-Auflösung.
+
 ### Zwei Betriebsarten, nie gemischt
 
 `ui.APIMode(cfg)` (Spielername gesetzt **und** `api.enabled`) entscheidet, woher *alle* Werte kommen —
@@ -159,6 +208,45 @@ Daraus folgen drei Regeln, die leicht wieder kaputtgehen:
 Liegt der Ist-Wert unter dem Zielwert, wird nicht „ausgeben 0" gemeldet, sondern `regen.FullAt` — die
 Uhrzeit, zu der die Leiste wieder bei 100% ist (`ceil((Max−Ist)/Regen)` Ticks ab dem nächsten Tick).
 Das ist die Information, die dann zählt.
+
+### Menü: Abschnitte, Sichtfenster, Fokus
+
+`field.sectionID` gruppiert die Zeilen, die Überschrift zeichnet `viewMenu` beim Wechsel selbst — die
+Feldliste bleibt flach, die Cursor-Logik unberührt. Gegliedert wird nach der Frage, **wann eine
+Einstellung gilt**: `menu.s.target` (immer), `menu.s.api` (nur mit Spielername), `menu.s.manual` (nur
+ohne), `menu.s.display`, `menu.s.config`. `sectionTitle` vermerkt am jeweils unwirksamen Abschnitt,
+warum er gerade nicht zählt.
+
+Mit den Überschriften ist das Menü höher als ein kleines Terminal, deshalb schneidet `windowRows` die
+Zeilen auf `m.height` zu und hält die Cursor-Zeile im Bild (`↑ 3 weitere` / `↓ 5 weitere`). Ist die
+Höhe 0 — Tests, Pipes, vor dem ersten `WindowSizeMsg` — bleibt alles stehen.
+
+Der Spielername steht seit der Gruppierung nicht mehr an erster Stelle; beim Erststart springt der
+Cursor über `menuModel.focus("username")` dorthin.
+
+### Debuff-Meldung im Hauptfenster
+
+`renderDebuff` meldet über den Leisten einen laufenden Pillen-Debuff, **in jedem Modus** — im
+Uhrzeit-Modus ist er die Alternative, die einen Tastendruck weit weg liegt. `State.DebuffEnd` trägt das
+Ende, unabhängig davon, ob die Zielzeit daran hängt; die Views lesen ausschließlich `State`, nicht
+`m.snap`.
+
+**Der Pillen-Code (`buffs.debuffCodes`) wird bewusst nicht angezeigt** — „Pillen-Debuff" genügt, für
+die Rechnung zählt nur das Ende. Ein Testfall verbietet, dass er in einer Ansicht auftaucht.
+
+Jede Fassung sagt nur, was der Kopf **nicht** schon zeigt (im Debuff-Modus steht die Uhrzeit dort,
+hier bleibt die Restzeit) — sonst wird die Zeile auf üblichen Breiten zweizeilig. Restzeit über
+`fmtDurationShort` ohne Sekunden. Hängt die Zielzeit am Debuff, ist die Zeile `styHint` statt
+`styMuted`. `TestHinweisAufDenDebuff` prüft alle drei Modi, den fehlenden, den abgelaufenen und den
+Fall ohne Abruf — und dass die Meldung bei Breite 74 einzeilig bleibt.
+
+### Kopfzeile: nichts umbrechen
+
+Die erste Kopfzeile muss in **eine** Zeile passen, sonst klappt mitten in „Basis jetzt 08:34" um und
+sieht wie ein Fehler aus. `renderHeader` baut sie deshalb mehrfach und lässt bei Platzmangel der
+Reihe nach die verzichtbaren Teile weg: erst die Pillen-Codes, dann die Basis.
+`TestKopfPasstInEineZeile` prüft alle drei Zielzeit-Modi über die Breiten `minWidth`, 70 und
+`maxWidth`.
 
 ### Balken und Legende
 
@@ -223,14 +311,140 @@ Menü-Änderungen werden absichtlich verworfen, gespeichert wird nur über die M
 
 Pfad-Auflösung: `--config` → `$BARKEEPER_CONFIG` → `os.UserConfigDir()/barkeeper/config.toml`.
 
+## Die Webapp (`web_app/`)
+
+Fachlich identisch, technisch anders. Was gilt:
+
+```
+src/lib/regen.ts     Port von internal/regen/regen.go    + regen.test.ts
+src/lib/hint.ts      Port von internal/regen/hint.go     + hint.test.ts
+src/lib/schedule.ts  Port von internal/regen/schedule.go
+src/lib/zone.ts      was in Go *time.Location erledigt   + zone.test.ts
+src/lib/state.ts     Port von internal/ui/state.go       + state.test.ts
+src/lib/settings.ts  Port von internal/config            + settings.test.ts
+src/lib/warera.ts    Client für die drei tRPC-Endpunkte  + warera.test.ts
+src/lib/i18n/        index.ts + eine Datei pro Sprache   + i18n.test.ts
+src/components/      die Ansichten                       + screens.test.tsx
+src/App.tsx          Uhr, Abruf, Status, Layout
+```
+
+### Was im Web anders ist
+
+- **Zeit ist `number`**, nicht `time.Time`: Millisekunden seit Epoch. Damit bleibt die
+  Tick-Arithmetik ganzzahlig. `floorDiv`/`ceilDiv` sind mitportiert, weil `Math.trunc` wie Go
+  Richtung null trunkiert.
+- **Zonen ohne Bibliothek**: `zone.ts` baut über `Intl` nach, was `*time.Location` kann.
+  `instantFromWall` braucht **zwei Durchgänge**, weil der Offset vom Ergebnis abhängt — das ist die
+  Stelle, an der die Zeitumstellung sonst eine Stunde verschluckt. `addWallDays` ist das `AddDate`
+  aus Go: kalendarisch, nicht 24 Stunden.
+- **Kein User-Agent, kein Proxy.** Den browserähnlichen Agent und `Origin` setzt der Browser selbst
+  und lässt sich nicht hineinreden; nötig ist es auch nicht, denn `api2.warera.io` schickt fremden
+  Herkunftsadressen `access-control-allow-origin: *`. Außer `Accept` wird kein Header gesetzt, damit
+  es eine „simple request“ ohne Vorabfrage bleibt. Nicht „aufräumen“ und keinen Proxy einbauen.
+- **Platzhalter sind `{0}`**, nicht `%s`. Damit entfällt die `%%`-Falle des Go-Katalogs; ein Test
+  verbietet übernommene Sprintf-Verben in den Katalogen.
+- **Gespeichert wird sofort** in den `localStorage` (`barkeeper.settings.v1`), es gibt keinen
+  Speichern-Knopf. `loadSettings` liest wie `config.Load` **auf die Defaults drauf**, `normalize`
+  repariert danach. Jeder Zugriff steckt in `try/catch` — ein privates Fenster darf die Seite nicht
+  umbringen.
+- **Der Tick-Hinweis ist ein Knopf.** Hängt die Zielzeit am Debuff, schaltet er auf den Modus
+  „Debuff, nächste Stunde“ — dort eine Uhrzeit einzutragen würde nichts ändern.
+- **Nachgeladen wird nach jedem Tick-Wechsel**, nicht auf einem festen Intervall: zwischen zwei Ticks
+  ändert sich im Spiel nichts. `api.cacheMinutes` ist die Frischeschranke davor.
+- **Die Gutschrift pro Tick ist keine Einstellung.** Sie ist `max / 10` (`regenFor` in
+  `settings.ts`) — eine Rechnung des Spiels, keine Frage an den Nutzer. `BarSettings` trägt deshalb
+  nur `max`; `normalize` wirft eine mitgespeicherte Rate weg. Angezeigt wird die Rate trotzdem, an
+  der Leiste und als Hilfstext am Maximum.
+- **Der Spielername wird erst beim Verlassen des Feldes übernommen** (`commitOn="blur"`), und der
+  Abruf hängt **nicht** am Namen: geladen wird über den Knopf neben dem Feld (`onLoad`) oder „Werte
+  holen“ oben. Vorher hing der Auto-Abruf am Namen und schickte pro Tastendruck eine Anfrage an
+  WarEra; `src/App.test.tsx` hält das fest.
+- **Ein Snapshot gehört zu dem Namen, für den er geholt wurde** (`snapFor`, kleingeschrieben).
+  Stimmt er nicht mehr, gilt der Snapshot nicht und das Abzeichen zeigt `nicht geladen` — sonst
+  stünden fremde Zahlen unter einem neuen Namen. Verglichen wird mit dem **angefragten** Namen, nicht
+  mit dem, den die API zurückgibt: die Suche findet zu „c0r“ auch „c0re“.
+- **Kein `<label>` um eine Zeile mit Knopf.** Ein `<label>` leitet jeden Klick an das erste
+  bedienbare Element darin weiter, und `<button>` gehört dazu: mit einem `<label>` um die ganze Zeile
+  drückte ein Klick auf die Beschriftung oder den Hilfstext die erste Option — bei der
+  Zurücksetzen-Zeile beim zweiten Klick „Ja, zurücksetzen“, also Datenverlust. `Row` ist deshalb ein
+  `<div data-row=…>`; Beschriftungen von Einzelfeldern hängen über `htmlFor`/`useId` an genau ihrem
+  Feld, Knopfgruppen bekommen `role="group"` samt `aria-label`. Drei Tests halten das fest, darunter
+  „legt kein `<label>` um einen Knopf“.
+- **Zwei Ebenen in den Einstellungen.** Vorne nur Spielername, Zielzeit und Zielzeit-Modus; alles
+  Seltene liegt hinter „Mehr einstellen“. Ein Test in `screens.test.tsx` hält fest, dass die erste
+  Ebene genau diese drei Felder hat — sonst wandert dort mit der Zeit wieder alles nach vorne.
+- **Der Fan-Projekt-Hinweis ist Pflicht** und darf nicht hinter einem Aufklapp-Abschnitt
+  verschwinden: kurz in der Kopfleiste (`disclaimer.short`), ausführlich im Fuß
+  (`Disclaimer.tsx` → `disclaimer.title`/`disclaimer.full`). Ein Test prüft ihn in jeder Sprache.
+- **Feste Basiszeit plus Abruf warnt.** Liegt die Basis in der Vergangenheit, zählt die Rechnung
+  Ticks mit, die im abgerufenen Ist-Wert schon stecken — die Zahl fällt zu großzügig aus. Die
+  Zielzeit-Zeile schreibt das dazu (`menu.f.base_time.warn`). **Dasselbe gilt in der Terminal-App,
+  dort steht der Hinweis noch nicht.**
+- **Kein `--once`, keine Tastenhilfe.** Der Erklärtext lebt im aufklappbaren Abschnitt am Seitenende
+  (`Explainer.tsx`), die Zonen-Liste dort ist die dritte Stelle, die bei einer Änderung am Balken
+  mitgezogen werden muss (neben `ZONE_STYLE`/`zonesFor` und `Legend` in `BarCard.tsx`).
+
+### Was im Web genauso gilt
+
+Alle Regeln aus „Zwei Betriebsarten, nie gemischt“, „Zielzeit: Uhrzeit oder Pillen-Debuff“,
+„Debuff-Meldung“, „Statuszeile“ und „Fehlertoleranz als Prinzip“ gelten unverändert:
+
+- Ein Abruf schreibt **nie** in die eigenen Werte; im API-Modus sind die Max-Felder gesperrt und
+  zeigen den Wert aus dem Abruf.
+- Im API-Modus ohne Antwort wird **kein** Ist-Wert erfunden, das Abzeichen zeigt `offline`.
+- Der Pillen-Code (`buffs.debuffCodes`) wird nicht angezeigt; ein Test in `screens.test.tsx`
+  verbietet es.
+- Angezeigt wird nur `safe`. `risky` bleibt gerechnet, erscheint aber nirgends.
+- Jeder Zweig, der eine Aktion auslöst, setzt die Statuszeile — sonst behauptet die vorige Meldung
+  etwas Falsches.
+
+### Farben und Schrift
+
+`src/theme.css` hält die Tokens im `@theme`-Block, übernommen aus dem Stylesheet von
+`app.warera.io`: Grund `#0A0E10`, Flächen `#0F1517`/`#141C1F`/`#192327`, dazu `ring-game` für den
+harten 1px-Ring der Spieloberfläche. Schrift ist **Saira** (wie im Spiel) aus Google Fonts. Bewusst
+**nur dunkel** — WarEra hat keinen hellen Modus. Neue Farben gehören als Token in denselben Block,
+nicht als Literal an die Verwendungsstelle.
+
+**Die Textfarben sind nicht die aus `theme.go`.** Die des Terminals liegen auf einem
+Terminal-Hintergrund; auf dem dunklen Grund der Seite fielen `faint` (3,99:1) und `danger` (4,47:1)
+durch. `src/theme.test.ts` liest die Token aus dem CSS und rechnet nach, dass **jede** Textfarbe auf
+**jeder** Grundfläche mindestens 4,5:1 erreicht (WCAG AA für kleinen Text) — eine Farbänderung, die
+das reißt, fällt im Test auf. Kleinste Schriftgröße im Quellcode ist 0,78rem.
+
+Handy: Eingabefelder haben unter `sm` 1rem Schriftgröße (darunter zoomt iOS Safari beim Antippen in
+die Seite), Bedienelemente sind `min-h-11` (44 px), alles Mehrspaltige hat einen Breakpoint. Nötig ist
+ein Browser ab etwa 2023 (Tailwind v4 erzeugt `@property`, `color-mix()`, `width>=`-Media-Queries);
+`ZONE_STYLE` setzt deshalb neben dem Muster immer einen Vollton, sonst verschwinden die Balken-Zonen
+auf älteren Browsern.
+
+### Deployment
+
+`.github/workflows/pages.yml` baut bei Push auf `main` mit Pfadfilter `web_app/**` und
+veröffentlicht `dist/` auf GitHub Pages; `workflow_dispatch` geht auch ohne Push. Vorher läuft
+`npm run check`. `check.yml` hat dafür einen zweiten Job `web`, damit auch Branches und PRs geprüft
+werden.
+
+Die Seite läuft unter **https://barkeeper.c0re.ninja/** (`CNAME` im DNS auf `corestriker.github.io.`).
+Der Hostname steht an drei Stellen und muss bei einem Wechsel überall mitziehen:
+`web_app/public/CNAME` (liest GitHub Pages aus dem Artefakt), die Repo-Settings unter Pages → Custom
+domain, und die Meta-Tags `canonical`/`og:url` in `web_app/index.html`.
+
+`base` in `vite.config.ts` ist **relativ** (`'./'`), damit derselbe Build sowohl unter der eigenen
+Domain im Wurzelverzeichnis als auch unter dem Repo-Unterpfad
+`https://corestriker.github.io/warera-barkeeper/` läuft. Das geht nur, weil die App eine einzige Seite
+ohne Routen ist — wer Client-Routen einbaut, braucht wieder einen absoluten `base` (`BASE_PATH` beim
+Bauen setzen).
+
 ## Hinweise
 
 - Modulpfad und Repo: `github.com/corestriker/warera-barkeeper`, die App im Unterordner
   `terminal_app`. Bei einer Umbenennung ziehen `go.mod`, alle Import-Pfade und die Links in der
   Root-README mit.
 - Die **README im Repo-Root ist englisch** (öffentliches Publikum), Code-Kommentare und die
-  Entwickler-Doku (`terminal_app/README.md`, diese Datei) sind deutsch. Wer die README ändert, ändert
-  sie auf Englisch.
+  Entwickler-Doku (`terminal_app/README.md`, `web_app/README.md`, diese Datei) sind deutsch. Wer die
+  README ändert, ändert sie auf Englisch. Auch der TypeScript-Code ist deutschsprachig
+  kommentiert — nur Identifier bleiben englisch.
 - **Releases** baut `.github/workflows/release.yml` aus einem Tag `v*`: `make check`, `make build-all`,
   `SHA256SUMS`, `gh release create`. Die Version im Binary kommt aus `git describe`, deshalb
   `fetch-depth: 0`.

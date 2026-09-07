@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+/**
+ * Die Palette stammt aus dem Stylesheet von app.warera.io, damit sich der
+ * Rechner neben dem Spiel nicht fremd anfühlt: dunkles Schiefer-Anthrazit als
+ * Grund, gedecktes Blaugrau für Flächen und Ränder, Rot als Akzent. Die
+ * Signalfarben (grün, orange, rot) sind dieselben wie in `theme.go` der
+ * Terminal-App.
+ *
+ * Bewusst nur dunkel: WarEra selbst hat keinen hellen Modus, und eine
+ * halbherzige helle Variante sähe neben dem Spiel falsch aus.
+ */
+@theme {
+  --font-sans: 'Saira', 'Ubuntu', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', ui-monospace, monospace;
+
+  --color-ground: #0a0e10;
+  --color-surface: #0f1517;
+  --color-surface-2: #141c1f;
+  --color-raised: #192327;
+  --color-line: #28383e;
+  --color-line-soft: #2d3f46;
+
+  /*
+   * Textfarben. Jede einzelne erreicht auf beiden Grundflächen mindestens
+   * 4,5:1 (WCAG AA für kleinen Text) — `src/theme.test.ts` rechnet das nach.
+   * Die früheren Werte kamen aus dem Terminal-Thema, wo sie auf einem
+   * Terminal-Hintergrund lagen; hier waren `faint` (3,99:1) und `danger`
+   * (4,47:1) zu dunkel zum Lesen.
+   */
+  --color-ink: #eef5f7; /* 17,6:1 */
+  --color-muted: #b3cad3; /* 11,4:1 */
+  --color-faint: #95aeb8; /* 8,3:1 */
+
+  /* Rot bleibt WarEras Akzent, nur aus dem helleren Teil derselben Rampe. */
+  --color-accent: #e18a8c; /* 7,6:1 */
+  --color-accent-deep: #7a1f20;
+  --color-safe: #a2dcb6; /* 12,4:1 */
+  --color-hint: #f4b374; /* 10,7:1 */
+  --color-danger: #ec8f91; /* 8,2:1 */
+
+  /* Ränder und Balken-Zonen: keine Textfarben, aber deutlicher als vorher. */
+  --color-line: #33454c;
+  --color-line-soft: #45595f;
+  --color-keep: #35484f;
+
+  --radius-card: 6px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: var(--color-ground);
+}
+
+body {
+  margin: 0;
+  /* Kein Aufblasen der Schrift beim Drehen des Telefons. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background:
+    radial-gradient(80rem 40rem at 50% -10rem, #16202400, #0a0e10 70%),
+    var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* Der harte 1px-Ring auf dunklem Grund ist das Erkennungszeichen der
+   WarEra-Oberfläche — dort sitzt er an Karten, Knöpfen und Eingabefeldern. */
+@utility ring-game {
+  box-shadow:
+    0 0 0 1px var(--color-ground),
+    0 2px 10px rgb(0 0 0 / 0.25);
+}
+
+/* Zahlen laufen mit fester Ziffernbreite, damit der Sekunden-Countdown nicht
+   bei jedem Tick die Breite wechselt. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

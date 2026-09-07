@@ -1,0 +1,67 @@
+# Baut die Webapp aus web_app/ und veröffentlicht sie auf GitHub Pages.
+#
+# Ausgelöst von einem Push auf main, der die Webapp betrifft — die Terminal-App
+# allein löst keinen Deploy aus. Für einen Stand ohne Push gibt es
+# workflow_dispatch.
+#
+# Einmalig nötig in den Repo-Settings → Pages: Source auf „GitHub Actions“,
+# Custom domain auf barkeeper.c0re.ninja, danach „Enforce HTTPS“. Den Hostnamen
+# liest GitHub aus web_app/public/CNAME, das mit ins Artefakt wandert.
+#
+# Der base-Pfad in web_app/vite.config.ts ist relativ, deshalb funktioniert
+# derselbe Build unter der Domain und unter dem Repo-Unterpfad.
+name: pages
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "web_app/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Zwei Pushes hintereinander sollen sich nicht überholen.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web_app/.nvmrc
+          cache: npm
+          cache-dependency-path: web_app/package-lock.json
+
+      - name: install
+        working-directory: web_app
+        run: npm ci
+
+      # Nichts veröffentlichen, was die eigenen Prüfungen nicht besteht:
+      # npm run check ist Typcheck, Tests und Build in einem.
+      - name: check
+        working-directory: web_app
+        run: npm run check
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web_app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

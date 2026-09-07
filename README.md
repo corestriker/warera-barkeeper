@@ -38,6 +38,8 @@ How much can I spend right now and still be back at 100% at 14:05? A small termi
 
 The bar runs from 0 to the maximum. `███` must stay so the target time holds, `░░░` may be spent until then, `···` has been used up already, and `▒▒▒` is missing up to the target value. The legend lists only the zones currently on screen.
 
+**Prefer a browser?** The same calculation, the same numbers, as a web app: **[barkeeper.c0re.ninja](https://barkeeper.c0re.ninja/)** — nothing to install, settings stay in your browser.
+
 ---
 
 ## The problem
@@ -64,6 +66,55 @@ It is **11:12**, the bars should be full again at **14:05**, max health is **140
 
 Until 14:05 the ticks at 12:00, 13:00 and 14:00 arrive: **three ticks, 42 HP of regeneration.** The target value is therefore 98 HP (70%) — that is how far the bar may go down. Standing at 117.5 HP right now, 19.5 HP are left to spend; that is the number the tool reports.
 
+## Target time from the pill debuff
+
+After a pill, WarEra applies a debuff, and `user.getUserLite` reports when it ends:
+
+```json
+"buffs": { "debuffCodes": ["cocain"], "debuffEndAt": "2026-09-02T12:34:09.448Z" }
+```
+
+That moment is usually the interesting target: it is when the next pill becomes worthwhile, and the bars should be full for it. It is therefore the **default**. Pick the source in the settings under *Target from*, or in the config:
+
+```toml
+target_mode = "debuff"       # the end of the pill debuff — the default
+target_mode = "debuff_hour"  # the tick after it, plus five minutes
+target_mode = "clock"        # only ever the fixed target_time below
+```
+
+With `debuff` or `debuff_hour`, `target_time` is the fallback for when no debuff is running; the settings mark the row as *fallback* while a debuff is driving the target.
+
+The header always says which source is in use, so a foreign time is never mistaken for the one you set:
+
+```
+debuff ends 14:34         left 5h 47m 06s   base now 08:47
+  spend 20.4   down to 56 (40%)   6 ticks
+
+target after debuff 15:05   left 6h 17m 57s   base now 08:47
+  spend 34.4   down to 42 (30%)   7 ticks
+```
+
+`debuff_hour` is for taking the pill on the hour rather than the minute the debuff ends. It targets the **tick after** the debuff end plus five minutes' grace — 15:05 for a debuff ending at 14:34. That is one whole tick of extra budget (7 instead of 6 above), paid for with 31 minutes of waiting. Aiming at 15:00 exactly would gain nothing: only ticks strictly before the target count, so a target of 15:00 counts the same ticks as one of 14:34, and the 15:00 tick would be a coin toss.
+
+While a debuff is running, the main window says so above the bars — in every mode, because in `clock` mode it is the alternative one keystroke away:
+
+```
+target 14:05   left 5h 18m 00s   base now 08:47
+  pill debuff ends at 14:34, 5h 47m left
+
+debuff ends 14:34   left 5h 47m 09s   base now 08:47
+  pill debuff, 5h 47m left — sets the target time
+
+target after debuff 15:05   left 6h 18m 00s   base now 08:47
+  pill debuff ends at 14:34, 5h 47m left — target: the tick after
+```
+
+Each wording says only what the header does not already show, which keeps the line to one row. When the debuff drives the target time, the line is highlighted rather than muted.
+
+Without an active debuff, or with the API unreachable, the configured `target_time` applies again and the header notes it: `target 14:05 (no debuff active)`. In manual operation the note stays away — without a fetch nobody can know about a debuff. The debuff end is also spelled out in the key list (`?`).
+
+Which pill caused the debuff is in the API response (`buffs.debuffCodes`) but deliberately not shown: for the calculation only the end time matters, and "pill debuff" says everything needed.
+
 ## Two operating modes
 
 Nothing is mixed — either one or the other applies:
@@ -86,6 +137,23 @@ If fetching is on but the API does not answer, the config values remain — with
   ██████████████████████████████████████▒▒▒▒▒▒▒▒····················
   not full at target time   100% only at 16:00   missing 18
 ```
+
+## Web app
+
+Everything below describes the terminal application. If you would rather not install anything, the web app does the same job in the browser:
+
+**[barkeeper.c0re.ninja](https://barkeeper.c0re.ninja/)**
+
+It is the same calculation — the same hourly ticks, the same three ways to set the target time, the same tip when the target time sits just before a tick — and it is a static page: no account, no server of ours, no data leaving your browser except the same public, read-only requests to WarEra that the terminal app makes. Your settings live in that browser's local storage; a tap on “Reset” forgets them.
+
+Differences worth knowing:
+
+- The settings are a panel at the top of the page instead of a menu, and every change applies and is stored right away — there is no “Save”.
+- The tip about a better target time comes with a button that applies it.
+- Health and hunger sit next to each other as cards; on a phone they stack.
+- There is no `--once` text output and no key bindings; the explanation lives in a “How this works” section at the bottom of the page.
+
+Developer notes: [`web_app/README.md`](web_app/README.md).
 
 ## Installation
 
@@ -150,7 +218,19 @@ Start it:
 barkeeper
 ```
 
-On the **very first** start a short explanation appears, followed directly by the settings: enter your player name there, the tool fetches the rest itself. Every later start goes straight to the calculation.
+On the **very first** start a short explanation appears, followed directly by the settings, with the cursor on the player name: enter it there, the tool fetches the rest itself. Every later start goes straight to the calculation.
+
+The settings are grouped by when a setting actually applies:
+
+| Section | Contains |
+|---|---|
+| **Target time** | where the target comes from, the fixed time, time base, time zone |
+| **WarEra fetch** | the API switch, your player name, a manual refetch |
+| **Your own values** | max and regen per tick for health and hunger — marked as unused while fetching is on |
+| **Display** | language, tip window, explanation at start |
+| **Config file** | save, delete |
+
+On a short terminal the list is trimmed to what fits and reports the rest as `↑ 3 more` / `↓ 5 more`; the selected row always stays visible.
 
 | Key | Effect |
 |---|---|
@@ -211,6 +291,7 @@ Overridable with `--config` or the environment variable `BARKEEPER_CONFIG`. The 
 username    = "YourName"   # for the API; empty = purely manual operation
 user_id     = ""           # cached automatically after the first lookup
 
+target_mode = "debuff"     # "debuff", "debuff_hour" or "clock" — see above
 target_time = "14:05"      # HH:MM local — when everything should be full again
 timezone    = ""           # IANA zone such as "Europe/Berlin", empty = system
 language    = ""           # "en", "de", … — empty = from $LANG, else English
@@ -269,6 +350,7 @@ All values are verified against the live WarEra API, not collected from forums:
 | max health | 100 (skill level 0) … 200 (level 10), +10 per level | `gameConfig` → `skills.health.levels` |
 | max hunger | 4 (level 0) … 14 (level 10), +1 per level | `gameConfig` → `skills.hunger.levels` |
 | your current and max values | `currentBarValue`, `total`, `hourlyBarRegen` | `user.getUserLite` → `skills.*` |
+| end of the pill debuff | absolute timestamp, UTC | `user.getUserLite` → `buffs.debuffEndAt` |
 
 Two things that surprise:
 
@@ -282,7 +364,7 @@ The tool talks to three endpoints, **all public and read-only**:
 | Endpoint | What for |
 |---|---|
 | `search.searchAnything` | player name → `userId` (once, then cached) |
-| `user.getUserLite` | max values, current values and regen rate of your bars |
+| `user.getUserLite` | max values, current values, regen rate, and the end of the pill debuff |
 | `gameConfig.getDates` | `nextRegenAt` as the tick grid |
 
 **No API key is needed**, no credentials are stored or requested, and nothing is written to your game account. Your player name is enough.
@@ -294,29 +376,37 @@ If the connection fails, the tool keeps calculating with the values from the con
 ```
 warera-barkeeper/
 ├── README.md
-└── terminal_app/          ← the console application (Go + Bubble Tea)
-    ├── main.go
-    └── internal/
-        ├── regen/         ← the calculation, dependency-free and tested
-        ├── config/        ← TOML settings
-        ├── warera/        ← API client
-        ├── i18n/          ← translations, one file per language
-        └── ui/            ← terminal interface
+├── terminal_app/          ← the console application (Go + Bubble Tea)
+│   ├── main.go
+│   └── internal/
+│       ├── regen/         ← the calculation, dependency-free and tested
+│       ├── config/        ← TOML settings
+│       ├── warera/        ← API client
+│       ├── i18n/          ← translations, one file per language
+│       └── ui/            ← terminal interface
+└── web_app/               ← the web app (React + TypeScript + Tailwind)
+    └── src/
+        ├── lib/           ← the same calculation in TypeScript, same test cases
+        ├── components/    ← the views
+        └── App.tsx        ← clock, fetch, status, layout
 ```
 
-The application deliberately lives in a subdirectory: the repository root stays free for a later web variant that maps the same mechanics into the browser.
+Both applications live in subdirectories, and both are the same tool: the calculation exists twice, once in Go and once in TypeScript. That duplication is deliberate — compiling the Go code to WebAssembly would have dragged the Go runtime into every page load — and it is held together by the test cases, which are ported along with it: the cases in `web_app/src/lib/regen.test.ts` are the cases in `terminal_app/internal/regen/regen_test.go`.
 
-**Planned:** web app under `web_app/` · energy and entrepreneurship as optional bars (mechanically identical) · a notification when the budget is used up.
+**Planned:** energy and entrepreneurship as optional bars (mechanically identical) · a notification when the budget is used up.
 
-Developer notes are in [`terminal_app/README.md`](terminal_app/README.md). Code comments and internal documentation are in German.
+Developer notes are in [`terminal_app/README.md`](terminal_app/README.md) and [`web_app/README.md`](web_app/README.md). Code comments and internal documentation are in German.
 
 ## Contributing
 
-Found a bug or have an idea? Issues and pull requests are welcome. For changes to the calculation, please include a test case in `terminal_app/internal/regen/regen_test.go` — that is the heart of the project.
+Found a bug or have an idea? Issues and pull requests are welcome. For changes to the calculation, please include a test case — and please change **both** copies, Go and TypeScript, so the two applications keep computing the same thing.
 
 ```sh
 cd terminal_app
-make check    # go vet, tests and a gofmt check
+make check      # go vet, tests and a gofmt check
+
+cd ../web_app
+npm run check   # typecheck, tests and build
 ```
 
 ## Releases

@@ -1,5 +1,6 @@
 # Build-Ergebnisse
 dist/
+node_modules/
 barkeeper
 barkeeper.exe
 # `go build .` im Modulordner benennt das Binary nach dem Ordner
