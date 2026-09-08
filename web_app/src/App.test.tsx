@@ -126,10 +126,16 @@ describe('Abruf', () => {
     fireEvent.click(container.querySelector('summary')!)
     await waitFor(() => expect(container.querySelector('details')?.open).toBe(true))
 
-    const row = container.querySelector('[data-row="Zurücksetzen"]')!
-    for (let i = 0; i < 4; i++) {
-      fireEvent.click(row)
-      fireEvent.click(row.querySelector('span')!)
+    // Alles anklicken, was um den Knopf herum steht: Überschrift, Vermerk,
+    // Hilfstext. Nichts davon darf etwas auslösen.
+    const around = [
+      ...container.querySelectorAll('h2'),
+      ...container.querySelectorAll('p'),
+      ...container.querySelectorAll('span'),
+    ].filter((el) => /In diesem Browser|gespeicherte Einstellungen verwerfen/.test(el.textContent ?? ''))
+    expect(around.length, 'die Umgebung des Knopfes muss gefunden werden').toBeGreaterThan(1)
+    for (let i = 0; i < 3; i++) {
+      for (const el of around) fireEvent.click(el)
     }
 
     expect(window.localStorage.getItem('barkeeper.settings.v1')).not.toBeNull()
@@ -152,6 +158,37 @@ describe('Abruf', () => {
     fireEvent.click(settingsButton(container, 'Ja, zurücksetzen'))
 
     expect(window.localStorage.getItem('barkeeper.settings.v1')).toBeNull()
+  })
+
+  it('zeigt die Abruf-Zeit am Knopf und sperrt ihn eine Minute', async () => {
+    // Die Uhrzeit gehört an den Knopf, der sie erneuert — nicht in eine
+    // Statuszeile mitten in der Seite. Und wer hämmert, holt zwischen zwei
+    // Stunden-Ticks ohnehin dieselben Zahlen.
+    saveSettings({ ...defaults(), username: 'c0re', language: 'de', timezone: 'Europe/Berlin' })
+
+    const { container } = render(<App />)
+    await waitFor(() => expect(rounds()).toBe(1))
+
+    const button = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.startsWith('Werte holen'),
+    ) as HTMLButtonElement
+    expect(button, 'Abruf-Knopf').toBeDefined()
+    expect(button.textContent).toMatch(/in \d+ s/)
+    expect(button.disabled).toBe(true)
+
+    fireEvent.click(button)
+    expect(rounds()).toBe(1)
+
+    // Die Statuszeile behauptet nichts über den Abruf.
+    expect(container.textContent).not.toMatch(/Werte aktualisiert/)
+  })
+
+  it('trägt die Restzeit im Tab-Titel', async () => {
+    // Auch ohne Benachrichtigungs-Erlaubnis soll man die Frist im Blick haben.
+    saveSettings({ ...defaults(), language: 'de', timezone: 'Europe/Berlin', targetMode: 'clock' })
+
+    render(<App />)
+    await waitFor(() => expect(document.title).toMatch(/^\d+h \d+m · War Era - Barkeeper$/))
   })
 
   it('rechnet ohne Namen mit den eigenen Werten und fragt gar nicht', async () => {

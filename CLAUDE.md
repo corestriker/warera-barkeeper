@@ -15,8 +15,14 @@ zwei Oberflächen für dieselbe Rechnung, jede in ihrem Unterordner — der Repo
 **Die Rechenlogik steht deshalb zweimal da** (`terminal_app/internal/regen` in Go,
 `web_app/src/lib` in TypeScript). Das ist bewusst so — ein WASM-Build hätte die Go-Runtime in jede
 Seitenladung geschleppt —, aber es ist die Gefahrenstelle des Projekts: **wer an der Tick-Mechanik
-etwas ändert, ändert beide Seiten und beide Testsuiten.** Die Testfälle sind gegenseitig portiert und
-tragen dieselben Namen.
+etwas ändert, ändert beide Seiten.**
+
+Dagegen steht `spec/regen-cases.json`: gemeinsame Testvektoren, die **beide** Testsuiten lesen
+(`internal/regen/spec_test.go` und `web_app/src/lib/spec.test.ts`). Erzeugt werden sie **aus der
+Go-Fassung** — sie ist die Urfassung: `make spec`. `make check` enthält `spec-check` und schlägt fehl,
+wenn die Datei nicht zur Go-Rechnung passt; weicht die Webapp ab, wird ihr Test rot. Wer einen Fall
+hinzufügt, trägt ihn in `terminal_app/tools/specgen` ein und erzeugt die Datei neu. Details in
+`spec/README.md`.
 
 Der Anzeigename steht als `ui.AppName` in `internal/ui/theme.go` und wird von Intro, Dashboard und
 `--version` benutzt. **Binary, Modulname und Config-Verzeichnis heißen weiterhin `barkeeper`** — die
@@ -351,6 +357,24 @@ src/App.tsx          Uhr, Abruf, Status, Layout
   „Debuff, nächste Stunde“ — dort eine Uhrzeit einzutragen würde nichts ändern.
 - **Nachgeladen wird nach jedem Tick-Wechsel**, nicht auf einem festen Intervall: zwischen zwei Ticks
   ändert sich im Spiel nichts. `api.cacheMinutes` ist die Frischeschranke davor.
+- **Die Spielersuche liefert nur IDs.** `search.searchAnything` gibt keine Namen zurück, und einen
+  Sammel-Endpunkt für Profile gibt es nicht (mehrere Namen durchprobiert, alle 404). Die
+  Vorschlagsliste löst deshalb jeden Treffer einzeln auf, gedeckelt auf `SEARCH_LIMIT` (6), erst ab
+  `SEARCH_MIN_LENGTH` (3) Zeichen und erst `SEARCH_DEBOUNCE` (300 ms) nach dem letzten Tastendruck.
+  Ein Klick auf einen Vorschlag übergibt **die ID mit** (`onPick`) — dann muss nichts aufgelöst
+  werden, und „c0r lädt c0re" kann nicht mehr unbemerkt passieren.
+- **Meldungen laufen nur, solange die Seite offen ist.** Ohne Service Worker und Push-Server gibt es
+  keine Nachricht bei geschlossenem Tab; das wäre eigene Server-Infrastruktur und damit das Ende von
+  „statische Seite". Was fällig ist, entscheidet `lib/alerts.ts` als **reine Funktion** —
+  `armedAt` verhindert Meldungen für Ereignisse von vor dem Einschalten, `fired` das Doppelte. Der
+  Tab-Titel trägt die Restzeit unabhängig von jeder Erlaubnis.
+- **Der Standard der Zielzeit ist `debuff_hour`**, im Terminal `debuff`. Läuft ein Debuff, ist der
+  erste Tick nach seinem Ende die bessere Frist: ein Tick mehr Budget für eine halbe Stunde
+  Wartezeit, und der Tick zählt verlässlich mit.
+- **Die Abruf-Zeit steht am Abruf-Knopf**, nicht in der Statuszeile, und ein Klick erneuert sie.
+  Zwischen zwei Abrufen von Hand liegt eine Minute Sperre (`FETCH_COOLDOWN`) — die API erlaubt 100
+  Anfragen pro Minute und pro IP (`ratelimit-policy: 100;w=60`), die Sperre ist also Anstand, nicht
+  Not. Der automatische Abruf nach einem Tick-Wechsel fällt nicht darunter.
 - **Die Gutschrift pro Tick ist keine Einstellung.** Sie ist `max / 10` (`regenFor` in
   `settings.ts`) — eine Rechnung des Spiels, keine Frage an den Nutzer. `BarSettings` trägt deshalb
   nur `max`; `normalize` wirft eine mitgespeicherte Rate weg. Angezeigt wird die Rate trotzdem, an

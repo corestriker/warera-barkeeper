@@ -19,6 +19,8 @@ import { TargetLine, TopBar, type ApiState } from './components/Header'
 import { HintCard } from './components/HintCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { STATUS_TTL, StatusLine } from './components/StatusLine'
+import { dueAlerts } from './lib/alerts'
+import { fmtDurationShort } from './lib/format'
 import { printer } from './lib/i18n'
 import { APP_NAME, GAME_URL, REPO_URL } from './lib/meta'
 import { tickAfter } from './lib/regen'
@@ -32,8 +34,7 @@ import {
   type Settings,
 } from './lib/settings'
 import { apiMode, buildState, computeState } from './lib/state'
-import { WareraError, fetchSnapshot, type Snapshot } from './lib/warera'
-import { formatClock } from './lib/zone'
+import { WareraError, fetchSnapshot, searchUsers, type Snapshot } from './lib/warera'
 
 /** Eine Statusmeldung als Message-ID, damit sie einen Sprachwechsel übersteht. */
 interface StatusMsg {
@@ -67,6 +68,13 @@ export function App() {
   const stored = useMemo(() => loadSettings(), [])
   const [settings, setSettings] = useState<Settings>(stored.settings)
   const [snap, setSnap] = useState<Snapshot | null>(null)
+  // Wann zuletzt ein Abruf gestartet wurde — daran hängt die Sperre am Knopf.
+  const [attemptedAt, setAttemptedAt] = useState<number | null>(null)
+  // Ab wann gemeldet werden darf, und was schon gemeldet wurde. Ohne das käme
+  // beim Öffnen der Seite eine Meldung für eine Leiste, die vor Stunden voll
+  // wurde.
+  const armedAt = useRef(Date.now())
+  const fired = useRef<Set<string>>(new Set())
   // Der Spielername, für den der Snapshot geholt wurde — klein geschrieben.
   const [snapFor, setSnapFor] = useState('')
   const [api, setApi] = useState<ApiState>(apiMode(stored.settings) ? 'loading' : 'off')
@@ -118,6 +126,7 @@ export function App() {
         return
       }
       const seq = ++fetchSeq.current
+      setAttemptedAt(Date.now())
       setApi('loading')
       // Abruf starten löscht die alte Meldung — das Abzeichen im Kopf zeigt,
       // dass etwas läuft.
@@ -132,12 +141,9 @@ export function App() {
         setSnap(got.snapshot)
         setSnapFor(current.username.trim().toLowerCase())
         setApi('ok')
-        setStatus({
-          id: 'status.fetched',
-          args: [formatClock(got.snapshot.fetchedAt, state.zone)],
-          kind: 'ok',
-          at: Date.now(),
-        })
+        // Keine Erfolgsmeldung: die Uhrzeit des Abrufs steht am Knopf, der sie
+        // erneuert. Eine Meldung mitten in der Seite verband beides nicht.
+        setStatus(null)
         // Nur die aufgelöste userId wird gemerkt — die Leisten-Werte aus dem
         // Abruf werden nie in die eigenen Werte geschrieben.
         if (got.userId !== current.userId) update({ userId: got.userId })
@@ -152,7 +158,7 @@ export function App() {
         })
       }
     },
-    [state.zone, t, update],
+    [t, update],
   )
 
   // Die Uhr. Ein Takt pro Sekunde, wie in der TUI.
@@ -192,6 +198,39 @@ export function App() {
     void doFetch(current)
   }, [nextTick])
 
+  // Beim Einschalten die Erlaubnis holen und die Uhr für Meldungen stellen.
+  useEffect(() => {
+    if (!settings.notify) return
+    armedAt.current = Date.now()
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission === 'default') void Notification.requestPermission()
+  }, [settings.notify])
+
+  // Fällige Meldungen zeigen. Die Entscheidung, was fällig ist, steckt in
+  // `dueAlerts` — hier wird nur zugestellt.
+  useEffect(() => {
+    if (!settings.notify) return
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+
+    for (const alert of dueAlerts(state, result, now, armedAt.current, fired.current)) {
+      fired.current.add(alert.key)
+      const text = alert.kind === 'full' ? t('alert.full', alert.bar ?? '') : t('alert.debuff')
+      try {
+        new Notification(APP_NAME, { body: text, tag: alert.key })
+      } catch {
+        // Manche Browser verbieten den Konstruktor trotz Erlaubnis. Dann bleibt
+        // es beim Tab-Titel — kein Grund, die Seite zu stören.
+      }
+    }
+  }, [now, settings.notify, state, result, t])
+
+  // Der Tab-Titel trägt die Restzeit, damit man sie auch ohne Erlaubnis und
+  // ohne hinzuschalten im Blick hat.
+  useEffect(() => {
+    const left = state.params.target - now
+    document.title = left > 0 ? `${fmtDurationShort(left)} · ${APP_NAME}` : APP_NAME
+  }, [now, state.params.target])
+
   // Erfolgsmeldungen laufen aus, Fehler und Rückfragen bleiben stehen.
   useEffect(() => {
     if (status === null || status.kind !== 'ok') return
@@ -227,6 +266,32 @@ export function App() {
         // Ein anderer Name macht die gemerkte userId ungültig.
         userId: trimmed.toLowerCase() === prev.username.toLowerCase() ? prev.userId : '',
       })
+      settingsRef.current = next
+      saveSettings(next)
+      setSettings(next)
+      void doFetch(next)
+    },
+    [doFetch],
+  )
+
+  /** Sucht Spieler für die Vorschlagsliste im Namensfeld. */
+  const search = useCallback(
+    (text: string) =>
+      searchUsers(text, {
+        baseUrl: settingsRef.current.api.baseUrl,
+        timeoutMs: timeoutMs(settingsRef.current),
+      }),
+    [],
+  )
+
+  /**
+   * Einen Vorschlag übernehmen. Die ID kommt mit, deshalb muss der Name nicht
+   * noch einmal aufgelöst werden — und es kann nicht passieren, dass „c0r" den
+   * Spieler „c0re" lädt, ohne dass es jemand merkt.
+   */
+  const pick = useCallback(
+    (hit: { id: string; username: string }) => {
+      const next = normalize({ ...settingsRef.current, username: hit.username, userId: hit.id })
       settingsRef.current = next
       saveSettings(next)
       setSettings(next)
@@ -275,6 +340,9 @@ export function App() {
         settings={settings}
         api={apiMode(settings) && snap !== null && !snapMatchesName ? 'stale' : api}
         settingsOpen={showSettings}
+        now={now}
+        fetchedAt={liveSnap === null ? null : liveSnap.fetchedAt}
+        attemptedAt={attemptedAt}
         onFetch={() => void doFetch(settings)}
         onToggleSettings={() => setShowSettings((open) => !open)}
       />
@@ -287,6 +355,8 @@ export function App() {
           debuffDrivesTarget={state.target !== 'clock'}
           onChange={update}
           onLoad={load}
+          onSearch={search}
+          onPick={pick}
           onReset={reset}
         />
       )}
@@ -295,8 +365,10 @@ export function App() {
 
       <DebuffNote t={t} state={state} now={now} />
 
-      {/* Die Antwort. Alles darüber ist der Rahmen, alles darunter Beiwerk. */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Die Antwort. Alles darüber ist der Rahmen, alles darunter Beiwerk.
+          Untereinander statt nebeneinander: so ist jede Karte über die ganze
+          Breite präsent, statt zwei halbe zu sein. */}
+      <div className="grid gap-4">
         {result.bars.map((br) => (
           <BarCard key={br.bar.key} t={t} br={br} zone={state.zone} />
         ))}

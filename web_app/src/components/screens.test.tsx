@@ -5,12 +5,12 @@
  * Sprache und Zeitzone werden immer explizit gesetzt, damit die Tests nicht am
  * Rechner hängen, auf dem sie laufen.
  */
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { codes, printer } from '../lib/i18n'
 import { BAR_HEALTH, defaults, type Settings, type TargetMode } from '../lib/settings'
 import { buildState, computeState } from '../lib/state'
-import type { Snapshot } from '../lib/warera'
+import type { Snapshot, UserHit } from '../lib/warera'
 import { instantFromWall } from '../lib/zone'
 import { BarCard, Legend } from './BarCard'
 import { DebuffNote } from './DebuffNote'
@@ -66,6 +66,9 @@ function dashboard(settings: Settings, snap: Snapshot | null, now = NOW): string
         settings={settings}
         api={snap === null ? 'off' : 'ok'}
         settingsOpen={false}
+        now={now}
+        fetchedAt={snap === null ? null : snap.fetchedAt}
+        attemptedAt={null}
         onFetch={() => {}}
         onToggleSettings={() => {}}
       />
@@ -102,6 +105,8 @@ function everything(settings: Settings, snap: Snapshot | null, now = NOW): strin
         debuffDrivesTarget={state.target !== 'clock'}
         onChange={() => {}}
         onLoad={() => {}}
+        onSearch={async () => []}
+        onPick={() => {}}
         onReset={() => {}}
       />
       <Explainer t={t} settings={{ ...settings, explainerOpen: true }} snap={snap} zone={state.zone} onToggle={() => {}} />
@@ -231,7 +236,15 @@ describe('Leisten', () => {
 })
 
 describe('Einstellungen', () => {
-  function panel(settings: Settings, api: boolean, onLoad: (name: string) => void = () => {}) {
+  function panel(
+    settings: Settings,
+    api: boolean,
+    handlers: {
+      onLoad?: (name: string) => void
+      onSearch?: (text: string) => Promise<UserHit[]>
+      onPick?: (hit: UserHit) => void
+    } = {},
+  ) {
     return render(
       <SettingsPanel
         t={printer('de')}
@@ -241,7 +254,9 @@ describe('Einstellungen', () => {
         }
         debuffDrivesTarget={false}
         onChange={() => {}}
-        onLoad={onLoad}
+        onLoad={handlers.onLoad ?? (() => {})}
+        onSearch={handlers.onSearch ?? (async () => [])}
+        onPick={handlers.onPick ?? (() => {})}
         onReset={() => {}}
       />,
     )
@@ -251,13 +266,56 @@ describe('Einstellungen', () => {
     // Der Knopf sitzt neben dem Feld, und ein Klick soll nicht den vorigen
     // Namen abfragen. Deshalb bekommt er den Entwurf mitgegeben.
     const loaded: string[] = []
-    const { container } = panel(testSettings(), false, (name) => loaded.push(name))
+    const { container } = panel(testSettings(), false, { onLoad: (name) => loaded.push(name) })
 
     const input = container.querySelector('input')!
     fireEvent.change(input, { target: { value: 'c0re' } })
     fireEvent.click([...container.querySelectorAll('button')].find((b) => b.textContent === 'Werte laden')!)
 
     expect(loaded).toEqual(['c0re'])
+  })
+
+  it('schlägt Spieler vor und übernimmt einen mit seiner ID', async () => {
+    // Die Suche der API liefert nur IDs; die Vorschlagsliste löst sie auf und
+    // gibt die ID beim Klick mit, damit der Name nicht neu aufgelöst wird.
+    const hits: UserHit[] = [
+      { id: 'a1', username: 'c0re', level: 37 },
+      { id: 'b2', username: 'C0reX', level: 33 },
+    ]
+    const picked: UserHit[] = []
+    const asked: string[] = []
+    const { container } = panel(testSettings(), false, {
+      onSearch: async (text) => {
+        asked.push(text)
+        return hits
+      },
+      onPick: (hit) => picked.push(hit),
+    })
+
+    fireEvent.change(container.querySelector('input')!, { target: { value: 'c0re' } })
+    await waitFor(() => expect(container.textContent).toContain('Level 37'))
+    expect(asked).toEqual(['c0re'])
+    expect(container.textContent).toContain('C0reX')
+
+    const suggestion = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.startsWith('C0reX'),
+    )!
+    fireEvent.click(suggestion)
+    expect(picked).toEqual([hits[1]])
+  })
+
+  it('sucht erst ab drei Zeichen', async () => {
+    const asked: string[] = []
+    const { container } = panel(testSettings(), false, {
+      onSearch: async (text) => {
+        asked.push(text)
+        return []
+      },
+    })
+
+    fireEvent.change(container.querySelector('input')!, { target: { value: 'c0' } })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(asked).toEqual([])
   })
 
   it('sperrt den Lade-Knopf ohne Namen', () => {

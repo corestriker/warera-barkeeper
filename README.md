@@ -399,11 +399,12 @@ Developer notes are in [`terminal_app/README.md`](terminal_app/README.md) and [`
 
 ## Contributing
 
-Found a bug or have an idea? Issues and pull requests are welcome. For changes to the calculation, please include a test case — and please change **both** copies, Go and TypeScript, so the two applications keep computing the same thing.
+Found a bug or have an idea? Issues and pull requests are welcome. For changes to the calculation, please change **both** copies, Go and TypeScript, so the two applications keep computing the same thing — and regenerate the shared test vectors in [`spec/`](spec/README.md), which both test suites read.
 
 ```sh
 cd terminal_app
-make check      # go vet, tests and a gofmt check
+make spec       # regenerate spec/regen-cases.json from the Go implementation
+make check      # go vet, tests, gofmt and the vector check
 
 cd ../web_app
 npm run check   # typecheck, tests and build

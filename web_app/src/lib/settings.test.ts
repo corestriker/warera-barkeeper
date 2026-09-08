@@ -74,9 +74,10 @@ describe('normalize', () => {
     expect(hintWindowMs(s)).toBe(15 * 60 * 1000)
   })
 
-  it('hat den Debuff als Standard-Zielzeit', () => {
-    // Läuft einer, ist sein Ende die interessante Frist; läuft keiner, gilt
+  it('hat „Debuff, nächste Stunde" als Standard-Zielzeit', () => {
+    // Läuft ein Debuff, ist der erste Tick nach seinem Ende die bessere Frist:
+    // ein Tick mehr Budget, und er zählt verlässlich mit. Läuft keiner, gilt
     // ohnehin die Uhrzeit.
-    expect(defaults().targetMode).toBe('debuff')
+    expect(defaults().targetMode).toBe('debuff_hour')
   })
 })

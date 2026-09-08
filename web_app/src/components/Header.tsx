@@ -16,7 +16,7 @@ import { APP_NAME } from '../lib/meta'
 import { tickAfter } from '../lib/regen'
 import type { Settings } from '../lib/settings'
 import { apiMode, type State } from '../lib/state'
-import { formatClock, sameWallDay } from '../lib/zone'
+import { formatClock, sameWallDay, zoneOr } from '../lib/zone'
 import { Badge, Button } from './ui'
 
 /**
@@ -24,6 +24,13 @@ import { Badge, Button } from './ui'
  * einem anderen Spielernamen als dem, der jetzt im Feld steht.
  */
 export type ApiState = 'off' | 'loading' | 'ok' | 'failed' | 'stale'
+
+/**
+ * Eine Minute Sperre zwischen zwei Abrufen von Hand. Die API erlaubt 100
+ * Anfragen pro Minute — die Sperre ist also nicht Not, sondern Anstand: wer auf
+ * den Knopf hämmert, holt zwischen zwei Stunden-Ticks ohnehin dieselben Zahlen.
+ */
+export const FETCH_COOLDOWN = 60_000
 
 function badgeFor(t: Translate, api: ApiState) {
   switch (api) {
@@ -45,6 +52,9 @@ export function TopBar({
   settings,
   api,
   settingsOpen,
+  now,
+  fetchedAt,
+  attemptedAt,
   onFetch,
   onToggleSettings,
 }: {
@@ -52,9 +62,24 @@ export function TopBar({
   settings: Settings
   api: ApiState
   settingsOpen: boolean
+  now: number
+  /** Wann die angezeigten Werte geholt wurden. */
+  fetchedAt: number | null
+  /** Wann zuletzt ein Abruf gestartet wurde — dafür gilt die Sperre. */
+  attemptedAt: number | null
   onFetch: () => void
   onToggleSettings: () => void
 }) {
+  // Die Uhrzeit des Abrufs steht am Knopf, der sie erneuert — nicht irgendwo
+  // in einer Statuszeile, wo sie niemand mit dem Abruf verbindet.
+  const wait = attemptedAt === null ? 0 : Math.max(0, FETCH_COOLDOWN - (now - attemptedAt))
+  const suffix =
+    wait > 0
+      ? t('menu.f.fetch.wait', Math.ceil(wait / 1000))
+      : fetchedAt === null
+        ? ''
+        : t('menu.f.fetch.at', formatClock(fetchedAt, zoneOr(settings.timezone)))
+
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line pb-3">
       <div className="min-w-0">
@@ -74,8 +99,13 @@ export function TopBar({
         )}
         {badgeFor(t, api)}
         {apiMode(settings) && (
-          <Button onClick={onFetch} disabled={api === 'loading'} title={t('menu.f.fetch.help')}>
+          <Button
+            onClick={onFetch}
+            disabled={api === 'loading' || wait > 0}
+            title={t('menu.f.fetch.help')}
+          >
             {t('menu.f.fetch')}
+            {suffix !== '' && <span className="ml-2 font-normal text-faint">{suffix}</span>}
           </Button>
         )}
         <Button variant={settingsOpen ? 'accent' : 'plain'} onClick={onToggleSettings}>

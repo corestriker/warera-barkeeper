@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { WareraError, fetchSnapshot, getUserLite, nextRegenAt, resolveUser } from './warera'
+import {
+  SEARCH_LIMIT,
+  WareraError,
+  fetchSnapshot,
+  getUserLite,
+  nextRegenAt,
+  resolveUser,
+  searchUsers,
+} from './warera'
 
 /** Ein `fetch`, das je URL-Fragment eine vorbereitete Antwort liefert. */
 function fakeFetch(routes: Record<string, unknown>, status = 200): typeof fetch {
@@ -49,6 +57,52 @@ describe('resolveUser', () => {
 
   it('verlangt überhaupt einen Namen', async () => {
     await expect(resolveUser('   ')).rejects.toMatchObject({ code: 'noUsername' })
+  })
+})
+
+describe('searchUsers', () => {
+  /** Ein Suchergebnis mit `n` Treffern, deren Profile Namen und Level tragen. */
+  function searchFetch(n: number, failing: string[] = []): typeof fetch {
+    const ids = Array.from({ length: n }, (_, i) => `u${i}`)
+    return vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('search.searchAnything')) {
+        return new Response(JSON.stringify({ result: { data: { userIds: ids } } }))
+      }
+      const id = decodeURIComponent(url).match(/"userId":"([^"]+)"/)?.[1] ?? ''
+      if (failing.includes(id)) return new Response('kaputt', { status: 500 })
+      return new Response(
+        JSON.stringify({
+          result: {
+            data: { _id: id, username: `spieler${id.slice(1)}`, leveling: { level: 10 + Number(id.slice(1)) } },
+          },
+        }),
+      )
+    }) as unknown as typeof fetch
+  }
+
+  it('löst die Treffer zu Namen und Leveln auf', async () => {
+    const hits = await searchUsers('c0re', opts(searchFetch(2)))
+    expect(hits).toEqual([
+      { id: 'u0', username: 'spieler0', level: 10 },
+      { id: 'u1', username: 'spieler1', level: 11 },
+    ])
+  })
+
+  it('deckelt die Liste — jeder Treffer kostet einen eigenen Abruf', async () => {
+    const hits = await searchUsers('aaa', opts(searchFetch(20)))
+    expect(hits).toHaveLength(SEARCH_LIMIT)
+  })
+
+  it('überspringt einen Treffer, dessen Profil nicht lädt', async () => {
+    const hits = await searchUsers('c0re', opts(searchFetch(3, ['u1'])))
+    expect(hits.map((h) => h.id)).toEqual(['u0', 'u2'])
+  })
+
+  it('sucht unterhalb der Mindestlänge gar nicht', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    await expect(searchUsers('c0', opts(fetchImpl))).resolves.toEqual([])
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })
 

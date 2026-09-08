@@ -1,0 +1,559 @@
+{
+  "_kommentar": "Erzeugt aus der Go-Implementierung (internal/regen) — siehe spec/README.md. Nicht von Hand pflegen.",
+  "faelle": [
+    {
+      "name": "Zielzeit exakt auf einem Tick",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:00:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 5,
+        "riskyTicks": 6,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 55,
+            "safeFloor": 55,
+            "safeFloorPct": 50,
+            "safeCapped": false,
+            "riskyBudget": 66,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": {
+          "kind": "onTick",
+          "tick": "2026-09-01T12:00:00Z",
+          "suggested": "2026-09-01T12:05:00Z",
+          "gapMs": 0,
+          "extra": {
+            "health": 11
+          }
+        }
+      }
+    },
+    {
+      "name": "Zielzeit fuenf Minuten nach dem Tick",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 6,
+        "riskyTicks": 6,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 66,
+            "safeFloor": 44,
+            "safeFloorPct": 40,
+            "safeCapped": false,
+            "riskyBudget": 66,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Zielzeit kurz vor einem Tick",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T11:50:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 5,
+        "riskyTicks": 5,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 55,
+            "safeFloor": 55,
+            "safeFloorPct": 50,
+            "safeCapped": false,
+            "riskyBudget": 55,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": {
+          "kind": "nearTick",
+          "tick": "2026-09-01T12:00:00Z",
+          "suggested": "2026-09-01T12:05:00Z",
+          "gapMs": 600000,
+          "extra": {
+            "health": 11
+          }
+        }
+      }
+    },
+    {
+      "name": "Basis exakt auf einem Tick",
+      "base": "2026-09-01T07:00:00Z",
+      "target": "2026-09-01T10:00:00Z",
+      "tickAnchor": "2026-09-01T08:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 0,
+      "expect": {
+        "safeTicks": 2,
+        "riskyTicks": 3,
+        "nextTick": "2026-09-01T08:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 22,
+            "safeFloor": 88,
+            "safeFloorPct": 80,
+            "safeCapped": false,
+            "riskyBudget": 33,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Zielzeit gleich Basis",
+      "base": "2026-09-01T07:30:00Z",
+      "target": "2026-09-01T07:30:00Z",
+      "tickAnchor": "2026-09-01T08:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 0,
+        "riskyTicks": 0,
+        "nextTick": "2026-09-01T08:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 0,
+            "safeFloor": 110,
+            "safeFloorPct": 100,
+            "safeCapped": false,
+            "riskyBudget": 0,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Zielzeit vor der Basis",
+      "base": "2026-09-01T13:00:00Z",
+      "target": "2026-09-01T12:00:00Z",
+      "tickAnchor": "2026-09-01T14:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 0,
+        "riskyTicks": 0,
+        "nextTick": "2026-09-01T14:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 0,
+            "safeFloor": 110,
+            "safeFloorPct": 100,
+            "safeCapped": false,
+            "riskyBudget": 0,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Deckelung bei langem Vorlauf",
+      "base": "2026-08-31T23:00:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T00:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 13,
+        "riskyTicks": 13,
+        "nextTick": "2026-09-01T00:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 110,
+            "safeFloor": 0,
+            "safeFloorPct": 0,
+            "safeCapped": true,
+            "riskyBudget": 110,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Hunger fraktional",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "hunger",
+          "max": 4,
+          "hourlyRegen": 0.4
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 6,
+        "riskyTicks": 6,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "hunger",
+            "safeBudget": 2.4000000000000004,
+            "safeFloor": 1.5999999999999996,
+            "safeFloorPct": 39.99999999999999,
+            "safeCapped": false,
+            "riskyBudget": 2.4000000000000004,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Mit Ist-Werten",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:00:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "current": {
+        "health": 70
+      },
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 5,
+        "riskyTicks": 6,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 55,
+            "safeFloor": 55,
+            "safeFloorPct": 50,
+            "safeCapped": false,
+            "riskyBudget": 66,
+            "leftSafe": 15,
+            "deficitSafe": 0,
+            "fullAt": "2026-09-01T10:00:00Z",
+            "ticksToFull": 4
+          }
+        ],
+        "hint": {
+          "kind": "onTick",
+          "tick": "2026-09-01T12:00:00Z",
+          "suggested": "2026-09-01T12:05:00Z",
+          "gapMs": 0,
+          "extra": {
+            "health": 11
+          }
+        }
+      }
+    },
+    {
+      "name": "Ist-Wert unter dem Zielwert",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:00:00Z",
+      "tickAnchor": "2026-09-01T07:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 110,
+          "hourlyRegen": 11
+        }
+      ],
+      "current": {
+        "health": 18.6
+      },
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 5,
+        "riskyTicks": 6,
+        "nextTick": "2026-09-01T07:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 55,
+            "safeFloor": 55,
+            "safeFloorPct": 50,
+            "safeCapped": false,
+            "riskyBudget": 66,
+            "leftSafe": 0,
+            "deficitSafe": 36.4,
+            "fullAt": "2026-09-01T15:00:00Z",
+            "ticksToFull": 9
+          }
+        ],
+        "hint": {
+          "kind": "onTick",
+          "tick": "2026-09-01T12:00:00Z",
+          "suggested": "2026-09-01T12:05:00Z",
+          "gapMs": 0,
+          "extra": {
+            "health": 11
+          }
+        }
+      }
+    },
+    {
+      "name": "Beide Leisten mit Ist-Werten",
+      "base": "2026-09-01T09:12:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T10:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 140,
+          "hourlyRegen": 14
+        },
+        {
+          "key": "hunger",
+          "max": 7,
+          "hourlyRegen": 0.7
+        }
+      ],
+      "current": {
+        "health": 117.5,
+        "hunger": 6.1
+      },
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 3,
+        "riskyTicks": 3,
+        "nextTick": "2026-09-01T10:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 42,
+            "safeFloor": 98,
+            "safeFloorPct": 70,
+            "safeCapped": false,
+            "riskyBudget": 42,
+            "leftSafe": 19.5,
+            "deficitSafe": 0,
+            "fullAt": "2026-09-01T11:00:00Z",
+            "ticksToFull": 2
+          },
+          {
+            "key": "hunger",
+            "safeBudget": 2.0999999999999996,
+            "safeFloor": 4.9,
+            "safeFloorPct": 70,
+            "safeCapped": false,
+            "riskyBudget": 2.0999999999999996,
+            "leftSafe": 1.1999999999999993,
+            "deficitSafe": 0,
+            "fullAt": "2026-09-01T11:00:00Z",
+            "ticksToFull": 2
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Auffuellzeitpunkt in der Zukunft",
+      "base": "2026-09-01T09:12:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T10:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 140,
+          "hourlyRegen": 14
+        }
+      ],
+      "current": {
+        "health": 80
+      },
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 3,
+        "riskyTicks": 3,
+        "nextTick": "2026-09-01T10:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 42,
+            "safeFloor": 98,
+            "safeFloorPct": 70,
+            "safeCapped": false,
+            "riskyBudget": 42,
+            "leftSafe": 0,
+            "deficitSafe": 18,
+            "fullAt": "2026-09-01T14:00:00Z",
+            "ticksToFull": 5
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Sommerzeit: 25-Stunden-Tag",
+      "base": "2026-10-24T22:30:00Z",
+      "target": "2026-10-25T13:05:00Z",
+      "tickAnchor": "2026-10-24T23:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 140,
+          "hourlyRegen": 14
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 15,
+        "riskyTicks": 15,
+        "nextTick": "2026-10-24T23:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 140,
+            "safeFloor": 0,
+            "safeFloorPct": 0,
+            "safeCapped": true,
+            "riskyBudget": 140,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Normaler Tag als Gegenprobe",
+      "base": "2026-10-23T22:30:00Z",
+      "target": "2026-10-24T12:05:00Z",
+      "tickAnchor": "2026-10-23T23:00:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 140,
+          "hourlyRegen": 14
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 14,
+        "riskyTicks": 14,
+        "nextTick": "2026-10-23T23:00:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 140,
+            "safeFloor": 0,
+            "safeFloorPct": 0,
+            "safeCapped": true,
+            "riskyBudget": 140,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    },
+    {
+      "name": "Verschobenes Tick-Raster",
+      "base": "2026-09-01T06:36:00Z",
+      "target": "2026-09-01T12:05:00Z",
+      "tickAnchor": "2026-09-01T07:30:00Z",
+      "tickPeriodMs": 3600000,
+      "bars": [
+        {
+          "key": "health",
+          "max": 140,
+          "hourlyRegen": 14
+        }
+      ],
+      "hintWindowMs": 900000,
+      "expect": {
+        "safeTicks": 5,
+        "riskyTicks": 5,
+        "nextTick": "2026-09-01T07:30:00Z",
+        "bars": [
+          {
+            "key": "health",
+            "safeBudget": 70,
+            "safeFloor": 70,
+            "safeFloorPct": 50,
+            "safeCapped": false,
+            "riskyBudget": 70,
+            "ticksToFull": 0
+          }
+        ],
+        "hint": null
+      }
+    }
+  ]
+}

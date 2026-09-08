@@ -61,8 +61,16 @@ Deshalb sind **die Testfälle mitportiert**: `src/lib/regen.test.ts` und
 `state.test.ts` dieselben wie `internal/ui/state_test.go`, mit denselben
 deutschen Namen.
 
-Wer an der Tick-Mechanik etwas ändert, ändert beide Seiten und beide
-Testsuiten. Wer einen neuen Fall findet, legt ihn in beiden ab.
+Dazu kommt die harte Klammer: **`spec/regen-cases.json`** im Repo-Root. Die
+Datei beschreibt Rechenfälle samt erwartetem Ergebnis und wird von *beiden*
+Testsuiten gelesen — hier `src/lib/spec.test.ts`, dort
+`internal/regen/spec_test.go`. Erzeugt wird sie aus der Go-Fassung
+(`cd terminal_app && make spec`), die damit die Urfassung der Rechnung ist.
+Weicht die TypeScript-Fassung ab, wird `spec.test.ts` rot; ist die Datei
+veraltet, schlägt `make check` in der Terminal-App fehl.
+
+Wer an der Tick-Mechanik etwas ändert, ändert beide Seiten, erzeugt die
+Vektoren neu und lässt beide Testsuiten laufen.
 
 ## Was gegenüber dem Terminal absichtlich anders ist
 
@@ -79,6 +87,11 @@ Testsuiten. Wer einen neuen Fall findet, legt ihn in beiden ab.
 - **Kein `<label>` um eine Zeile mit Knopf** (`Row` ist ein `<div data-row=…>`, Beschriftungen
   hängen über `htmlFor` an ihrem Feld). Ein `<label>` leitet Klicks an das erste bedienbare Element
   weiter, `<button>` inklusive — vorher drückte ein Klick auf die Beschriftung die erste Option.
+- **Die Vorschlagsliste am Namensfeld** löst jeden Treffer einzeln auf (die Suche der API gibt nur
+  IDs her), entprellt 300 ms, ab drei Zeichen, höchstens sechs Treffer. Ein Klick übergibt die ID
+  mit, damit der Name nicht neu aufgelöst wird.
+- **Benachrichtigungen** gibt es nur, solange die Seite offen ist. Was fällig ist, entscheidet
+  `lib/alerts.ts` ohne Browser-API und ist damit geprüft; der Tab-Titel trägt die Restzeit immer.
 - **Der Fan-Projekt-Hinweis steht immer sichtbar** — kurz in der Kopfleiste, ausführlich im Fuß
   (`components/Disclaimer.tsx`), nie hinter einem Aufklapp-Abschnitt.
 

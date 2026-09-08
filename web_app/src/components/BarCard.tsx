@@ -124,27 +124,46 @@ export function BarCard({ t, br, zone }: { t: Translate; br: BarResult; zone: st
       </div>
 
       {/* Das hier ist die Antwort der ganzen Seite — sie darf nicht neben
-          irgendetwas anderem gleich groß stehen. */}
+          irgendetwas anderem gleich groß stehen. Der Zielwert steht daneben,
+          nicht kleingedruckt darunter: er ist die zweite Hälfte der Aussage. */}
       {shortfall ? (
-        <div className="mb-4">
-          <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-danger uppercase">
-            {t('bar.not_full')}
+        <div className="mb-4 flex flex-wrap items-end gap-x-8 gap-y-2">
+          <div>
+            <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-danger uppercase">
+              {t('bar.not_full')}
+            </div>
+            <div className="tabular text-[2.6rem] leading-none font-semibold text-hint sm:text-[3rem]">
+              {br.fullAt === null ? t('bar.later') : formatClock(br.fullAt, zone)}
+            </div>
+            <div className="mt-1 text-[0.82rem] text-muted">{t('bar.full_at')}</div>
           </div>
-          <div className="tabular text-[2.6rem] leading-none font-semibold text-hint sm:text-[3rem]">
-            {br.fullAt === null ? t('bar.later') : formatClock(br.fullAt, zone)}
-          </div>
-          <div className="mt-1 text-[0.85rem] text-muted">
-            {t('bar.full_at')} · {t('bar.missing')}{' '}
-            <span className="tabular text-ink">{num(br.deficitSafe)}</span>
+          <div>
+            <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-muted uppercase">
+              {t('bar.missing')}
+            </div>
+            <div className="tabular text-[1.7rem] leading-none font-semibold text-ink">
+              {num(br.deficitSafe)}
+            </div>
           </div>
         </div>
       ) : (
-        <div className="mb-4">
-          <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-muted uppercase">
-            {t('bar.spend')}
+        <div className="mb-4 flex flex-wrap items-end gap-x-8 gap-y-2">
+          <div>
+            <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-muted uppercase">
+              {t('bar.spend')}
+            </div>
+            <div className="tabular text-[3rem] leading-none font-semibold text-safe sm:text-[3.6rem]">
+              {num(spend)}
+            </div>
           </div>
-          <div className="tabular text-[3rem] leading-none font-semibold text-safe sm:text-[3.6rem]">
-            {num(spend)}
+          <div>
+            <div className="mb-0.5 text-[0.75rem] font-medium tracking-[0.14em] text-muted uppercase">
+              {t('bar.down_to')}
+            </div>
+            <div className="tabular flex items-baseline gap-2 text-[1.7rem] leading-none font-semibold text-ink">
+              {num(br.safe.floor)}
+              <span className="text-[0.9rem] font-normal text-faint">({pct(br.safe.floorPct)})</span>
+            </div>
           </div>
         </div>
       )}
@@ -152,11 +171,6 @@ export function BarCard({ t, br, zone }: { t: Translate; br: BarResult; zone: st
       <Gauge t={t} br={br} />
 
       <div className="tabular mt-2 flex flex-wrap gap-x-2 text-[0.82rem] text-faint">
-        <span>
-          {t('bar.down_to')} <span className="text-muted">{num(br.safe.floor)}</span> (
-          {pct(br.safe.floorPct)})
-        </span>
-        <span>·</span>
         <span>{t('bar.ticks', br.safe.ticks)}</span>
         <span>·</span>
         <span>{t('bar.per_tick', num(br.bar.hourlyRegen))}</span>

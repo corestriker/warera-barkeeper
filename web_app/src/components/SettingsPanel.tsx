@@ -22,12 +22,13 @@
  * Eingaben werden validiert wie im Menü der TUI: ein unlesbarer Wert wird nicht
  * übernommen, sondern als Fehler unter dem Feld gemeldet.
  */
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { num } from '../lib/format'
 import { codes, langName, resolve, type Translate } from '../lib/i18n'
 import { parseClock } from '../lib/schedule'
 import { BAR_HEALTH, BAR_HUNGER, regenFor, type Settings } from '../lib/settings'
 import { apiMode } from '../lib/state'
+import { SEARCH_MIN_LENGTH, type UserHit } from '../lib/warera'
 import { browserZone, isValidZone } from '../lib/zone'
 import { Button, Card, SectionTitle } from './ui'
 
@@ -183,6 +184,141 @@ function TextRow({
   )
 }
 
+/**
+ * Das Namensfeld mit Vorschlagsliste.
+ *
+ * Eine eigene Zeile, weil hier drei Dinge zusammenhängen, die `TextRow` nicht
+ * kennt: der Entwurf, die entprellte Suche und der Lade-Knopf. Gesucht wird
+ * erst ab `SEARCH_MIN_LENGTH` Zeichen und erst `SEARCH_DEBOUNCE` nach dem
+ * letzten Tastendruck — jeder Treffer kostet einen eigenen Abruf, weil die
+ * Suche der API nur IDs liefert.
+ *
+ * Ein Klick auf einen Vorschlag übergibt **die ID mit**: dann muss der Name
+ * nicht noch einmal aufgelöst werden, und die Verwechslung „c0r findet c0re"
+ * kann gar nicht mehr passieren.
+ */
+const SEARCH_DEBOUNCE = 300
+
+function UsernameRow({
+  t,
+  value,
+  apiOn,
+  onSearch,
+  onCommit,
+  onLoad,
+  onPick,
+}: {
+  t: Translate
+  value: string
+  apiOn: boolean
+  onSearch: (text: string) => Promise<UserHit[]>
+  onCommit: (name: string) => void
+  onLoad: (name: string) => void
+  onPick: (hit: UserHit) => void
+}) {
+  const id = useId()
+  const [draft, setDraft] = useState(value)
+  const [hits, setHits] = useState<UserHit[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const search = useRef(0)
+
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
+
+  // Entprellte Suche. Der Zähler verwirft Antworten, die von einer älteren
+  // Eingabe stammen — sonst überschreibt eine langsame Antwort die neuere.
+  useEffect(() => {
+    const query = draft.trim()
+    if (!apiOn || query.length < SEARCH_MIN_LENGTH || query === value.trim()) {
+      setHits(null)
+      setSearching(false)
+      return
+    }
+    const seq = ++search.current
+    setSearching(true)
+    const timer = window.setTimeout(() => {
+      void onSearch(query)
+        .then((found) => {
+          if (seq === search.current) setHits(found)
+        })
+        .catch(() => {
+          if (seq === search.current) setHits([])
+        })
+        .finally(() => {
+          if (seq === search.current) setSearching(false)
+        })
+    }, SEARCH_DEBOUNCE)
+    return () => window.clearTimeout(timer)
+  }, [draft, value, apiOn, onSearch])
+
+  return (
+    <Row
+      label={t('menu.f.username')}
+      help={hits !== null && hits.length > 0 ? t('menu.f.username.pick') : t('menu.f.load.help')}
+      htmlFor={id}
+    >
+      <span className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">
+          <input
+            id={id}
+            type="text"
+            value={draft}
+            autoComplete="off"
+            placeholder={t('menu.f.username')}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => draft !== value && onCommit(draft)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') onLoad(draft)
+            }}
+            className={inputClass}
+          />
+        </span>
+        <span className="shrink-0">
+          <Button
+            variant="accent"
+            onClick={() => onLoad(draft)}
+            disabled={draft.trim() === '' || !apiOn}
+            title={t('menu.f.fetch.help')}
+          >
+            {t('menu.f.load')}
+          </Button>
+        </span>
+      </span>
+
+      {(searching || hits !== null) && (
+        <ul className="ring-game mt-2 max-h-56 overflow-y-auto rounded-[6px] border border-line bg-ground">
+          {searching && (
+            <li className="px-3 py-2 text-[0.82rem] text-faint">{t('menu.f.username.searching')}</li>
+          )}
+          {!searching && hits !== null && hits.length === 0 && (
+            <li className="px-3 py-2 text-[0.82rem] text-faint">{t('menu.f.username.no_hits')}</li>
+          )}
+          {!searching &&
+            hits?.map((hit) => (
+              <li key={hit.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHits(null)
+                    setDraft(hit.username)
+                    onPick(hit)
+                  }}
+                  className="flex min-h-11 w-full cursor-pointer items-baseline justify-between gap-3 px-3 py-2 text-left text-[0.88rem] text-ink hover:bg-raised"
+                >
+                  <span className="truncate font-medium">{hit.username}</span>
+                  <span className="shrink-0 text-[0.78rem] text-faint">
+                    {t('menu.f.username.level', hit.level)}
+                  </span>
+                </button>
+              </li>
+            ))}
+        </ul>
+      )}
+    </Row>
+  )
+}
+
 /** Eine Reihe Knöpfe, von denen einer aktiv ist — der Ersatz für ↵ im Menü. */
 function ChoiceRow<T extends string>({
   label,
@@ -260,6 +396,10 @@ export interface SettingsPanelProps {
    * soll nicht davon abhängen, ob das Feld schon übernommen wurde.
    */
   onLoad: (username: string) => void
+  /** Sucht Spieler für die Vorschlagsliste. */
+  onSearch: (text: string) => Promise<UserHit[]>
+  /** Einen Vorschlag übernehmen — mit ID, damit der Name nicht neu aufgelöst wird. */
+  onPick: (hit: UserHit) => void
   onReset: () => void
 }
 
@@ -270,9 +410,14 @@ export function SettingsPanel({
   debuffDrivesTarget,
   onChange,
   onLoad,
+  onSearch,
+  onPick,
   onReset,
 }: SettingsPanelProps) {
   const languageId = useId()
+  // Hat der Browser die Erlaubnis verweigert, hilft ein Schalter hier nicht
+  // weiter — dann muss es der Nutzer in den Seiteneinstellungen zurücknehmen.
+  const notifyBlocked = typeof Notification !== 'undefined' && Notification.permission === 'denied'
   const [confirmReset, setConfirmReset] = useState(false)
   const [more, setMore] = useState(false)
   const live = apiMode(settings)
@@ -333,12 +478,11 @@ export function SettingsPanel({
     <Card>
       {/* Erste Ebene: die zwei Einstellungen, um die es wirklich geht. */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextRow
-          label={t('menu.f.username')}
-          help={t('menu.f.load.help')}
+        <UsernameRow
+          t={t}
           value={settings.username}
-          commitOn="blur"
-          validate={() => null}
+          apiOn={settings.api.enabled}
+          onSearch={onSearch}
           onCommit={(username) =>
             // Ein neuer Name macht die gemerkte userId ungültig.
             onChange({
@@ -346,16 +490,8 @@ export function SettingsPanel({
               userId: username.trim() === settings.username ? settings.userId : '',
             })
           }
-          trailing={(draft) => (
-            <Button
-              variant="accent"
-              onClick={() => onLoad(draft)}
-              disabled={draft.trim() === '' || !settings.api.enabled}
-              title={t('menu.f.fetch.help')}
-            >
-              {t('menu.f.load')}
-            </Button>
-          )}
+          onLoad={onLoad}
+          onPick={onPick}
         />
         <TextRow
           label={t('menu.f.target_time')}
@@ -468,6 +604,18 @@ export function SettingsPanel({
               }}
               onCommit={(raw) => onChange({ hintWindowMinutes: Number(raw.trim()) })}
             />
+            <ChoiceRow
+              label={t('menu.f.notify')}
+              help={
+                notifyBlocked ? t('menu.f.notify.denied') : t('menu.f.notify.help')
+              }
+              value={settings.notify ? 'on' : 'off'}
+              options={[
+                { value: 'on', label: t('menu.v.on') },
+                { value: 'off', label: t('menu.v.off') },
+              ]}
+              onSelect={(value) => onChange({ notify: value === 'on' })}
+            />
             <Row label={t('menu.f.language')} help={t('menu.f.language.help')} htmlFor={languageId}>
               <select
                 id={languageId}
@@ -485,26 +633,29 @@ export function SettingsPanel({
             </Row>
           </Section>
 
-          <Section title={t('menu.s.storage')} note={t('menu.s.storage.note')}>
-            <Row label={t('menu.f.reset')} help={t('menu.f.reset.help')}>
-              {confirmReset ? (
-                <span className="flex flex-wrap gap-2">
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      setConfirmReset(false)
-                      onReset()
-                    }}
-                  >
-                    {t('menu.v.confirm_yes')}
-                  </Button>
-                  <Button onClick={() => setConfirmReset(false)}>{t('menu.v.confirm_no')}</Button>
-                </span>
-              ) : (
-                <Button onClick={() => setConfirmReset(true)}>{t('menu.f.reset')}</Button>
-              )}
-            </Row>
-          </Section>
+          {/* Ohne Zeilenbeschriftung: die stand wörtlich auf dem Knopf
+              darunter, und dann liest man „Zurücksetzen" zweimal. */}
+          <div>
+            <SectionTitle note={t('menu.s.storage.note')}>{t('menu.s.storage')}</SectionTitle>
+            {confirmReset ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[0.85rem] text-danger">{t('menu.v.confirm')}</span>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    setConfirmReset(false)
+                    onReset()
+                  }}
+                >
+                  {t('menu.v.confirm_yes')}
+                </Button>
+                <Button onClick={() => setConfirmReset(false)}>{t('menu.v.confirm_no')}</Button>
+              </div>
+            ) : (
+              <Button onClick={() => setConfirmReset(true)}>{t('menu.f.reset')}</Button>
+            )}
+            <p className="mt-1 text-[0.78rem] text-faint">{t('menu.f.reset.help')}</p>
+          </div>
         </div>
       </details>
     </Card>

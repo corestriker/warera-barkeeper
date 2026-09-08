@@ -221,6 +221,52 @@ export async function resolveUser(username: string, opts: ClientOptions = {}): P
   throw new WareraError('ambiguous', `player name ${name} is ambiguous (${ids.length} matches)`, name)
 }
 
+/** Ein Treffer der Spielersuche, so wie ihn die Vorschlagsliste braucht. */
+export interface UserHit {
+  id: string
+  username: string
+  level: number
+}
+
+/** Wie viele Treffer die Suche höchstens auflöst. */
+export const SEARCH_LIMIT = 6
+
+/** Ab wie vielen Zeichen überhaupt gesucht wird. */
+export const SEARCH_MIN_LENGTH = 3
+
+/**
+ * Sucht Spieler und löst die Treffer zu Namen auf.
+ *
+ * `search.searchAnything` liefert **nur IDs** — einen Sammel-Endpunkt für
+ * mehrere Profile gibt es nicht. Jeder Treffer kostet deshalb einen eigenen
+ * Abruf, und die Liste ist auf `SEARCH_LIMIT` gedeckelt. Bei 100 erlaubten
+ * Anfragen pro Minute ist das reichlich, solange der Aufrufer entprellt.
+ *
+ * Einzelne Fehlschläge werden übersprungen: ein Treffer, dessen Profil sich
+ * nicht laden lässt, soll nicht die ganze Liste verhindern.
+ */
+export async function searchUsers(text: string, opts: ClientOptions = {}): Promise<UserHit[]> {
+  const query = text.trim()
+  if (query.length < SEARCH_MIN_LENGTH) return []
+
+  const data = record(await call('search.searchAnything', { searchText: query }, opts))
+  const ids = Array.isArray(data['userIds'])
+    ? data['userIds'].filter((id): id is string => typeof id === 'string').slice(0, SEARCH_LIMIT)
+    : []
+
+  const hits = await Promise.all(
+    ids.map(async (id): Promise<UserHit | null> => {
+      try {
+        const user = await getUserLite(id, opts)
+        return { id, username: user.username, level: user.level }
+      } catch {
+        return null
+      }
+    }),
+  )
+  return hits.filter((hit): hit is UserHit => hit !== null && hit.username !== '')
+}
+
 /** Lädt das öffentliche Profil samt Leisten-Werten. */
 export async function getUserLite(userId: string, opts: ClientOptions = {}): Promise<UserLite> {
   return parseUser(await call('user.getUserLite', { userId }, opts))

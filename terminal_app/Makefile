@@ -7,7 +7,7 @@ DIST    := dist
 
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: all build run test vet fmt check clean build-all
+.PHONY: all build run test vet fmt check clean build-all spec spec-check
 
 all: check build
 
@@ -26,8 +26,27 @@ vet:
 fmt:
 	gofmt -l -w .
 
-check: vet test
+check: vet test spec-check
 	@test -z "$$(gofmt -l .)" || { echo "nicht formatiert:"; gofmt -l .; exit 1; }
+
+# Die gemeinsamen Testvektoren fuer beide Anwendungen, erzeugt aus dieser
+# Implementierung — sie ist die Urfassung der Rechnung. Die Webapp prueft
+# gegen dieselbe Datei; damit fallen Abweichungen auf, statt zu schlummern.
+SPEC := ../spec/regen-cases.json
+
+spec:
+	go run ./tools/specgen $(SPEC)
+
+# Waechter: wer die Rechnung aendert, ohne die Vektoren neu zu erzeugen, faellt
+# hier auf — und nicht erst dem Nutzer.
+spec-check:
+	@go run ./tools/specgen $(SPEC).tmp
+	@if ! diff -q $(SPEC) $(SPEC).tmp >/dev/null 2>&1; then \
+		rm -f $(SPEC).tmp; \
+		echo "Die gemeinsamen Testvektoren sind veraltet — 'make spec' ausfuehren"; \
+		exit 1; \
+	fi
+	@rm -f $(SPEC).tmp
 
 # Reines Go ohne cgo, deshalb genuegt ein GOOS/GOARCH-Durchlauf pro Ziel.
 build-all: clean

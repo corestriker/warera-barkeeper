@@ -9,7 +9,8 @@ Entwickler-Notizen.
 ```sh
 make build        # Binary für das eigene System
 make build-all    # linux, darwin, windows × amd64/arm64 nach dist/
-make check        # go vet, Tests, gofmt-Prüfung
+make check        # go vet, Tests, gofmt-Prüfung, Vektoren-Abgleich
+make spec         # gemeinsame Testvektoren für beide Apps neu erzeugen
 make run          # bauen und starten
 ```
 

@@ -67,6 +67,12 @@ export interface Settings {
   baseTime: string
 
   hintWindowMinutes: number
+  /**
+   * Meldung, wenn eine Leiste wieder voll ist oder der Pillen-Debuff endet.
+   * Funktioniert nur, solange die Seite offen ist — ohne eigenen Server gibt es
+   * keine Push-Nachricht.
+   */
+  notify: boolean
   /** Ist der Abschnitt „Wie das funktioniert“ aufgeklappt? */
   explainerOpen: boolean
 
@@ -81,16 +87,18 @@ export function defaults(): Settings {
   return {
     username: '',
     userId: '',
-    // Debuff als Standard: läuft einer, ist sein Ende die interessante Frist;
-    // läuft keiner, gilt ohnehin die Uhrzeit. Ohne Spielernamen bleibt es
-    // immer bei der Uhrzeit.
-    targetMode: 'debuff',
+    // „Debuff, nächste Stunde" als Standard: läuft ein Debuff, ist der erste
+    // Tick nach seinem Ende die bessere Frist — ein Tick mehr Budget für eine
+    // halbe Stunde Wartezeit, und der Tick zählt verlässlich mit. Läuft keiner,
+    // gilt ohnehin die Uhrzeit; ohne Spielernamen immer.
+    targetMode: 'debuff_hour',
     targetTime: '14:05',
     timezone: '',
     language: '',
     baseMode: 'now',
     baseTime: '07:00',
     hintWindowMinutes: 15,
+    notify: false,
     explainerOpen: false,
     bars: {
       // Level 0 der jeweiligen Skills — nur für den manuellen Betrieb; mit
