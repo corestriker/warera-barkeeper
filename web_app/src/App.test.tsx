@@ -202,3 +202,111 @@ describe('Abruf', () => {
     expect(container.textContent).toContain('manuell')
   })
 })
+
+describe('Vorschlagsliste am Namensfeld', () => {
+  /**
+   * Der Bug: ein Klick auf einen Vorschlag lud den **Suchtext** statt des
+   * angeklickten Spielers und scheiterte mit „mne ist mehrdeutig".
+   *
+   * Der Ablauf im Browser: `mousedown` nimmt dem Feld den Fokus, `onBlur`
+   * übernimmt den Entwurf als Namen, der Sucheffekt hängt daraufhin die Liste
+   * aus — und der Klick landet auf einem Knopf, den es nicht mehr gibt.
+   * Deshalb wird hier nicht bloß `click` gefeuert, sondern die Reihenfolge des
+   * Browsers nachgestellt: `mousedown`, der Fokusverlust nur, wenn ihn niemand
+   * verhindert hat, dann der Klick.
+   */
+  const HITS: Record<string, unknown> = {
+    u1: {
+      _id: 'u1',
+      username: 'Mnemosyne',
+      leveling: { level: 12 },
+      skills: {
+        health: { level: 4, total: 140, currentBarValue: 117.5, hourlyBarRegen: 14 },
+        hunger: { level: 4, total: 7, currentBarValue: 6.1, hourlyBarRegen: 0.7 },
+      },
+    },
+    u2: {
+      _id: 'u2',
+      username: 'Mnestra',
+      leveling: { level: 3 },
+      skills: {
+        health: { level: 4, total: 90, currentBarValue: 42, hourlyBarRegen: 9 },
+        hunger: { level: 4, total: 7, currentBarValue: 6.1, hourlyBarRegen: 0.7 },
+      },
+    },
+  }
+
+  function stubTwoHits() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        calls.push(url)
+        // Zwei Treffer, keiner davon heißt wie der Suchtext: über den Namen
+        // allein wäre das nicht auflösbar.
+        if (url.includes('search.searchAnything')) return json({ userIds: ['u1', 'u2'] })
+        if (url.includes('user.getUserLite')) return json(HITS[url.includes('u2') ? 'u2' : 'u1'])
+        return json({ nextRegenAt: new Date().toISOString() })
+      }),
+    )
+  }
+
+  /** Klickt so, wie der Browser klickt. */
+  function browserClick(target: HTMLElement, field: HTMLInputElement) {
+    const focusStays = !fireEvent.mouseDown(target)
+    if (!focusStays) fireEvent.blur(field)
+    expect(target.isConnected, 'der Vorschlag muss den Fokuswechsel überleben').toBe(true)
+    fireEvent.click(target)
+  }
+
+  async function suggestion(container: HTMLElement, name: string): Promise<HTMLButtonElement> {
+    return await waitFor(() => {
+      const button = [...container.querySelectorAll('button')].find((b) =>
+        b.textContent?.includes(name),
+      )
+      if (button === undefined) throw new Error(`kein Vorschlag „${name}“`)
+      return button as HTMLButtonElement
+    })
+  }
+
+  it('lädt den angeklickten Spieler, nicht den Suchtext', async () => {
+    saveSettings({ ...defaults(), language: 'de', timezone: 'Europe/Berlin' })
+    stubTwoHits()
+
+    const { container } = render(<App />)
+    fireEvent.click(settingsButton(container, 'Einstellungen'))
+    const field = usernameField(container)
+    fireEvent.change(field, { target: { value: 'Mne' } })
+
+    const hit = await suggestion(container, 'Mnestra')
+    calls = []
+    browserClick(hit, field)
+
+    // Der Abruf geht über die mitgelieferte ID: keine Auflösung des Suchtexts,
+    // damit auch keine Mehrdeutigkeit.
+    await waitFor(() => expect(rounds()).toBe(1))
+    expect(calls.some((url) => url.includes('search.searchAnything'))).toBe(false)
+    expect(calls.some((url) => url.includes('%22u2%22'))).toBe(true)
+
+    // Und die Werte des angeklickten Spielers stehen in der Anzeige.
+    await waitFor(() => expect(container.textContent).toContain('Mnestra'))
+    expect(container.textContent).toContain('42')
+    expect(container.textContent).not.toContain('mehrdeutig')
+  })
+
+  it('schließt die Liste erst mit der Auswahl', async () => {
+    saveSettings({ ...defaults(), language: 'de', timezone: 'Europe/Berlin' })
+    stubTwoHits()
+
+    const { container } = render(<App />)
+    fireEvent.click(settingsButton(container, 'Einstellungen'))
+    const field = usernameField(container)
+    fireEvent.change(field, { target: { value: 'Mne' } })
+
+    const hit = await suggestion(container, 'Mnemosyne')
+    browserClick(hit, field)
+
+    await waitFor(() => expect(container.textContent).not.toContain('Mnestra'))
+    expect(usernameField(container).value).toBe('Mnemosyne')
+  })
+})

@@ -89,7 +89,8 @@ Vektoren neu und lässt beide Testsuiten laufen.
   weiter, `<button>` inklusive — vorher drückte ein Klick auf die Beschriftung die erste Option.
 - **Die Vorschlagsliste am Namensfeld** löst jeden Treffer einzeln auf (die Suche der API gibt nur
   IDs her), entprellt 300 ms, ab drei Zeichen, höchstens sechs Treffer. Ein Klick übergibt die ID
-  mit, damit der Name nicht neu aufgelöst wird.
+  mit, damit der Name nicht neu aufgelöst wird — und verhindert `mousedown`, damit das Feld den
+  Fokus behält: sonst übernimmt `onBlur` den Suchtext und die Liste ist weg, ehe der Klick ankommt.
 - **Benachrichtigungen** gibt es nur, solange die Seite offen ist. Was fällig ist, entscheidet
   `lib/alerts.ts` ohne Browser-API und ist damit geprüft; der Tab-Titel trägt die Restzeit immer.
 - **Der Fan-Projekt-Hinweis steht immer sichtbar** — kurz in der Kopfleiste, ausführlich im Fuß

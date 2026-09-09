@@ -363,6 +363,13 @@ src/App.tsx          Uhr, Abruf, Status, Layout
   `SEARCH_MIN_LENGTH` (3) Zeichen und erst `SEARCH_DEBOUNCE` (300 ms) nach dem letzten Tastendruck.
   Ein Klick auf einen Vorschlag übergibt **die ID mit** (`onPick`) — dann muss nichts aufgelöst
   werden, und „c0r lädt c0re" kann nicht mehr unbemerkt passieren.
+- **Die Vorschläge verhindern `mousedown`.** Ohne das nimmt der Klick dem Feld den Fokus, `onBlur`
+  übernimmt den **Suchtext** als Namen, der Sucheffekt hängt die Liste aus — und der Klick landet auf
+  einem Knopf, den es nicht mehr gibt. Aus demselben Grund schließt der Sucheffekt eine offene Liste
+  **nicht**, wenn der übernommene Name den Entwurf eingeholt hat; geschlossen wird ausdrücklich beim
+  Auswählen, beim Laden und mit `esc`. Zwei Tests in `App.test.tsx` stellen dafür die Reihenfolge des
+  Browsers nach (`mousedown`, Fokusverlust nur wenn nicht verhindert, dann `click`) — ein blankes
+  `fireEvent.click` hätte den Fehler nie gesehen.
 - **Meldungen laufen nur, solange die Seite offen ist.** Ohne Service Worker und Push-Server gibt es
   keine Nachricht bei geschlossenem Tab; das wäre eigene Server-Infrastruktur und damit das Ende von
   „statische Seite". Was fällig ist, entscheidet `lib/alerts.ts` als **reine Funktion** —

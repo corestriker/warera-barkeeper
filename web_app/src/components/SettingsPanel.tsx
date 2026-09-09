@@ -196,6 +196,12 @@ function TextRow({
  * Ein Klick auf einen Vorschlag übergibt **die ID mit**: dann muss der Name
  * nicht noch einmal aufgelöst werden, und die Verwechslung „c0r findet c0re"
  * kann gar nicht mehr passieren.
+ *
+ * Damit dieser Klick überhaupt ankommt, verhindern die Vorschläge das
+ * voreingestellte `mousedown`: sonst verliert das Feld den Fokus, `onBlur`
+ * übernimmt den **Suchtext** als Namen, der Sucheffekt hängt die Liste aus —
+ * und der Klick landet auf einem Knopf, den es nicht mehr gibt. Ergebnis war
+ * der Suchtext ohne ID und beim nächsten Abruf „mne ist mehrdeutig".
  */
 const SEARCH_DEBOUNCE = 300
 
@@ -230,8 +236,15 @@ function UsernameRow({
   // Eingabe stammen — sonst überschreibt eine langsame Antwort die neuere.
   useEffect(() => {
     const query = draft.trim()
-    if (!apiOn || query.length < SEARCH_MIN_LENGTH || query === value.trim()) {
+    if (!apiOn || query.length < SEARCH_MIN_LENGTH) {
       setHits(null)
+      setSearching(false)
+      return
+    }
+    // Steht der Entwurf schon als Name fest, ist nichts mehr zu suchen — aber
+    // eine offene Liste bleibt offen. Sie hier zu schließen war der Bug: die
+    // Übernahme beim Fokusverlust holte den Vorschlag unter dem Zeiger weg.
+    if (query === value.trim()) {
       setSearching(false)
       return
     }
@@ -269,7 +282,12 @@ function UsernameRow({
             onChange={(event) => setDraft(event.target.value)}
             onBlur={() => draft !== value && onCommit(draft)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') onLoad(draft)
+              if (event.key === 'Enter') {
+                setHits(null)
+                onLoad(draft)
+              }
+              // Escape schließt die Liste, ohne etwas zu übernehmen.
+              if (event.key === 'Escape') setHits(null)
             }}
             className={inputClass}
           />
@@ -277,7 +295,10 @@ function UsernameRow({
         <span className="shrink-0">
           <Button
             variant="accent"
-            onClick={() => onLoad(draft)}
+            onClick={() => {
+              setHits(null)
+              onLoad(draft)
+            }}
             disabled={draft.trim() === '' || !apiOn}
             title={t('menu.f.fetch.help')}
           >
@@ -299,6 +320,9 @@ function UsernameRow({
               <li key={hit.id}>
                 <button
                   type="button"
+                  // Der Fokus bleibt im Feld: sonst übernimmt onBlur den
+                  // Suchtext, und dieser Knopf ist weg, ehe der Klick kommt.
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setHits(null)
                     setDraft(hit.username)
