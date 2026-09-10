@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Era - Barkeeper
 // @namespace    https://barkeeper.c0re.ninja/
-// @version      0.1.0
+// @version      0.2.0
 // @description  Shades the health and hunger bars by how far you may spend them down.
 // @description:de  Färbt die Leisten für Leben und Hunger danach ein, wie weit du sie leerspielen darfst.
 // @author       corestriker
@@ -856,7 +856,9 @@
 	var TEXTS = {
 		de: {
 			title: "Barkeeper",
-			username: "Spielername",
+			username: "Spieler",
+			detected: "von der Seite übernommen",
+			noUser: "Nicht eingeloggt? Auf der Seite wurde kein Spieler gefunden.",
 			target: "Zielzeit",
 			mode: "Zielzeit-Modus",
 			zone: "Zeitzone",
@@ -867,7 +869,6 @@
 			loading: "lädt …",
 			spend: "ausgeben",
 			fullAt: "voll um",
-			noName: "Trag oben deinen Spielernamen ein.",
 			notFound: "Spieler nicht gefunden.",
 			ambiguous: "Name ist mehrdeutig.",
 			offline: "Kein Abruf möglich — es gelten keine Ist-Werte.",
@@ -877,7 +878,9 @@
 		},
 		en: {
 			title: "Barkeeper",
-			username: "Player name",
+			username: "Player",
+			detected: "taken from the page",
+			noUser: "Not signed in? No player found on the page.",
 			target: "Target time",
 			mode: "Target mode",
 			zone: "Time zone",
@@ -888,7 +891,6 @@
 			loading: "loading …",
 			spend: "spend",
 			fullAt: "full at",
-			noName: "Enter your player name above.",
 			notFound: "Player not found.",
 			ambiguous: "Name is ambiguous.",
 			offline: "No fetch — running without live values.",
@@ -922,6 +924,24 @@
 			window.localStorage.setItem(STORE_KEY, JSON.stringify(settings));
 		} catch {}
 	}
+	/**
+	* Die eigene User-ID aus der Seite.
+	*
+	* In der Kopfzeile stehen mehrere Links auf das eigene Profil — Avatar, Stufe
+	* und das Inventar unter `/user/<id>/inventory`. Die ID ist eine 24-stellige
+	* Hex-Zahl; das reicht als Erkennungsmerkmal und kommt ohne Klassennamen aus.
+	*
+	* Mit der ID braucht es keine Namenssuche mehr: `fetchSnapshot` fragt direkt
+	* `user.getUserLite` und liefert den Namen gleich mit.
+	*/
+	function detectUserId() {
+		const scope = topBar() ?? document;
+		for (const a of scope.querySelectorAll("a[href^=\"/user/\"]")) {
+			const id = /^\/user\/([0-9a-f]{24})(?:[/?#]|$)/.exec(a.getAttribute("href") ?? "")?.[1];
+			if (id !== void 0) return id;
+		}
+		return "";
+	}
 	function view() {
 		const now = Date.now();
 		const live = settings.username.trim().toLowerCase() === snapFor ? snap : null;
@@ -934,9 +954,9 @@
 		};
 	}
 	async function fetchNow() {
-		const name = settings.username.trim();
-		if (name === "") {
-			status = T("noName");
+		const id = detectUserId();
+		if (id === "") {
+			status = T("noUser");
 			render();
 			return;
 		}
@@ -944,17 +964,18 @@
 		status = "";
 		render();
 		try {
-			const got = await fetchSnapshot(name, settings.userId, {
+			const got = await fetchSnapshot("", id, {
 				baseUrl: settings.api.baseUrl,
 				timeoutMs: timeoutMs(settings)
 			});
 			snap = got.snapshot;
-			snapFor = name.toLowerCase();
-			if (got.userId !== settings.userId) {
-				settings = {
+			snapFor = got.snapshot.user.username.toLowerCase();
+			if (settings.username !== got.snapshot.user.username || settings.userId !== id) {
+				settings = normalize({
 					...settings,
-					userId: got.userId
-				};
+					username: got.snapshot.user.username,
+					userId: id
+				});
 				save();
 			}
 			status = "";
@@ -974,28 +995,45 @@
 	* Tailwind-`@theme`-Block und lässt sich nicht als Modul einlesen.
 	*/
 	var TOKENS = `
-.bk-zones {
+[data-bk] {
   --color-keep:#35484f; --color-safe:#a2dcb6; --color-danger:#ec8f91;
   --color-ground:#0a0e10; --color-line-soft:#45595f;
+  --bk-spendable:${ZONE_STYLE.spendable.backgroundImage};
+  --bk-missing:${ZONE_STYLE.missing.backgroundImage};
+  --bk-used:${ZONE_STYLE.used.backgroundImage};
 }`;
-	/** `backgroundImage` → `background-image`. */
-	function kebab(prop) {
-		return prop.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-	}
-	function zoneRules() {
-		return Object.entries(ZONE_STYLE).map(([kind, style]) => {
-			return `.bk-zone-${kind} { ${Object.entries(style).map(([prop, value]) => `${kebab(prop)}:${value};`).join(" ")} }`;
-		}).join("\n");
-	}
 	var CSS = `
-.bk-zones { position:absolute; inset:0; display:flex; pointer-events:none; z-index:2; }
-.bk-zone { height:100%; }
+/*
+ * Umgestylt wird die Leiste des Spiels selbst — kein eigener Balken darüber.
+ * Zwei Elemente sind beteiligt: die Bahn (der Hintergrund über die volle
+ * Breite) und die Füllung, die das Spiel per transform: scaleX() auf den
+ * Ist-Wert staucht.
+ *
+ * Deshalb "!important" und CSS-Variablen: React schreibt "background" auf der
+ * Füllung als inline-Style. Eine Regel aus dem Stylesheet mit !important
+ * sticht das, und die veränderlichen Zahlen reicht das Skript als
+ * Custom Properties nach — die fasst React nicht an.
+ */
+[data-bk="track"] {
+  background-color: var(--color-ground) !important;
+  background-image: var(--bk-missing), var(--bk-used) !important;
+  background-size: var(--bk-band-w, 0px) 100%, 6px 6px !important;
+  background-position: var(--bk-band-x, 0px) 0, 0 0 !important;
+  background-repeat: no-repeat, repeat !important;
+}
+[data-bk="fill"] {
+  background-color: transparent !important;
+  background-image:
+    linear-gradient(90deg, var(--color-keep) 0 var(--bk-split, 100%), transparent var(--bk-split, 100%)),
+    var(--bk-spendable) !important;
+  border-color: transparent !important;
+}
 
 #bk-button { display:flex; align-items:center; justify-content:center; width:30px; height:30px;
   border:1px solid #33454c; border-radius:4px; background:#0f1517; color:#f4b374; cursor:pointer;
   font:600 15px/1 system-ui, sans-serif; flex-shrink:0; }
 #bk-button:hover { border-color:#e18a8c; }
-#bk-panel { position:fixed; top:52px; right:10px; z-index:99999; width:290px; max-width:calc(100vw - 20px);
+#bk-panel { position:fixed; top:52px; right:10px; z-index:99999; width:270px; max-width:calc(100vw - 20px);
   background:#0f1517; color:#eef5f7; border:1px solid #33454c; border-radius:6px; padding:12px 13px;
   font:400 13px/1.5 'Saira', system-ui, sans-serif; box-shadow:0 8px 26px rgba(0,0,0,.55); }
 #bk-panel h2 { margin:0 0 9px; font-size:14px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#f4b374; }
@@ -1006,6 +1044,9 @@
 #bk-panel button.bk-do { margin-top:11px; width:100%; padding:6px; background:#7a1f20; color:#eef5f7;
   border:1px solid #e18a8c; border-radius:3px; font:inherit; font-weight:600; cursor:pointer; }
 #bk-panel button.bk-do[disabled] { opacity:.55; cursor:default; }
+.bk-who { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.bk-who b { color:#eef5f7; }
+.bk-who span { color:#95aeb8; font-size:11px; }
 .bk-out { margin-top:11px; border-top:1px solid #33454c; padding-top:9px; }
 .bk-row { display:flex; justify-content:space-between; gap:8px; padding:2px 0; }
 .bk-row b { color:#a2dcb6; font-variant-numeric:tabular-nums; }
@@ -1017,7 +1058,7 @@
 		if (document.getElementById("bk-css")) return;
 		const el = document.createElement("style");
 		el.id = "bk-css";
-		el.textContent = TOKENS + CSS + zoneRules();
+		el.textContent = TOKENS + CSS;
 		document.head.appendChild(el);
 	}
 	function topBar() {
@@ -1057,6 +1098,22 @@
 		}
 		return best;
 	}
+	/**
+	* Färbt die vorhandenen Leisten um.
+	*
+	* Nichts wird übergelegt: die Bahn des Spiels bekommt den Hintergrund für
+	* „verbraucht“ und — falls die Zeit nicht mehr reicht — das Band für den
+	* Fehlbetrag, die Füllung des Spiels bekommt den Verlauf von „behalten“ nach
+	* „ausgebbar“. Die Füllung selbst staucht das Spiel weiter per `scaleX`, ihre
+	* Breite bleibt also seine Angelegenheit; sie steht ohnehin genau für den
+	* Ist-Wert, und der ist auch bei uns die Grenze zwischen ausgebbar und
+	* verbraucht.
+	*
+	* Das Band für den Fehlbetrag wird in Pixeln gesetzt statt in Prozent: eine
+	* Hintergrundebene auf einen Ausschnitt zu legen geht mit Prozentangaben nur
+	* über eine unangenehme Umrechnung, mit `background-size`/`-position` in Pixeln
+	* ist es direkt hingeschrieben. Neu berechnet wird ohnehin jede Sekunde.
+	*/
 	function paintBars() {
 		const fills = findFills();
 		if (fills === null) return false;
@@ -1067,27 +1124,28 @@
 			const track = fill.parentElement;
 			if (track === null) continue;
 			const br = result.bars.find((b) => b.bar.key === key);
-			let overlay = track.querySelector(":scope > .bk-zones");
-			if (br === void 0 || br.bar.max <= 0) {
-				overlay?.remove();
+			if (br === void 0 || br.bar.max <= 0 || !br.hasCurrent) {
+				if (fill.dataset.bk !== void 0) {
+					delete fill.dataset.bk;
+					delete track.dataset.bk;
+				}
 				continue;
 			}
-			if (overlay === null) {
-				overlay = document.createElement("div");
-				overlay.className = "bk-zones";
-				track.appendChild(overlay);
-			}
-			const zones = zonesFor(br).filter((z) => z.share > 0);
-			const want = zones.map((z) => `${z.kind}:${z.share.toFixed(5)}`).join("|");
-			if (overlay.dataset.bk === want) continue;
-			overlay.dataset.bk = want;
-			overlay.textContent = "";
-			for (const zone of zones) {
-				const seg = document.createElement("div");
-				seg.className = `bk-zone bk-zone-${zone.kind}`;
-				seg.style.width = `${zone.share * 100}%`;
-				overlay.appendChild(seg);
-			}
+			const zones = zonesFor(br);
+			const shareOf = (kind) => zones.find((z) => z.kind === kind)?.share ?? 0;
+			const keep = shareOf("keep");
+			const spendable = shareOf("spendable");
+			const missing = shareOf("missing");
+			const filled = keep + spendable;
+			const split = filled <= 0 ? 1 : keep / filled;
+			const width = track.clientWidth;
+			const bandX = keep * width;
+			const bandW = missing * width;
+			fill.dataset.bk = "fill";
+			track.dataset.bk = "track";
+			fill.style.setProperty("--bk-split", `${(split * 100).toFixed(3)}%`);
+			track.style.setProperty("--bk-band-x", `${bandX.toFixed(2)}px`);
+			track.style.setProperty("--bk-band-w", `${bandW.toFixed(2)}px`);
 		}
 		return true;
 	}
@@ -1118,7 +1176,7 @@
 		panel.id = "bk-panel";
 		document.body.appendChild(panel);
 		render();
-		if (snap === null && settings.username.trim() !== "") fetchNow();
+		if (snap === null) fetchNow();
 	}
 	function field(parent, label, value, onCommit, type = "text") {
 		const l = document.createElement("label");
@@ -1140,18 +1198,11 @@
 		const h = document.createElement("h2");
 		h.textContent = T("title");
 		panel.appendChild(h);
-		field(panel, T("username"), settings.username, (v) => {
-			if (v.trim() === settings.username) return;
-			settings = normalize({
-				...settings,
-				username: v,
-				userId: ""
-			});
-			snap = null;
-			snapFor = "";
-			save();
-			fetchNow();
-		});
+		const who = document.createElement("div");
+		who.className = "bk-who";
+		const name = snap?.user.username ?? settings.username;
+		who.innerHTML = name === "" ? `<span>—</span>` : `<b>${name}</b><span>${T("detected")}</span>`;
+		panel.appendChild(who);
 		field(panel, T("target"), settings.targetTime, (v) => {
 			settings = normalize({
 				...settings,
@@ -1244,12 +1295,12 @@
 			if (lastTick === 0) lastTick = tick;
 			else if (tick !== lastTick) {
 				lastTick = tick;
-				if (settings.username.trim() !== "") fetchNow();
+				fetchNow();
 			}
 			render();
 		}, 1e3);
 		ensureButton();
-		if (settings.username.trim() !== "") fetchNow();
+		fetchNow();
 	}
 	boot();
 	//#endregion
