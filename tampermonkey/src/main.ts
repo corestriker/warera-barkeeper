@@ -142,12 +142,12 @@ async function fetchNow(): Promise<void> {
   const id = detectUserId()
   if (id === '') {
     status = T('noUser')
-    render()
+    refresh()
     return
   }
   busy = true
   status = ''
-  render()
+  refresh()
   try {
     // Nur die ID zählt: `fetchSnapshot` überspringt die Namenssuche, sobald
     // sie gesetzt ist. Den Namen liefert die Antwort mit.
@@ -177,7 +177,7 @@ async function fetchNow(): Promise<void> {
         : T('offline')
   } finally {
     busy = false
-    render()
+    refresh()
   }
 }
 
@@ -389,141 +389,164 @@ function ensureButton(): void {
   else menu.appendChild(button)
 }
 
-function togglePanel(): void {
-  const open = document.getElementById('bk-panel')
-  if (open !== null) {
-    open.remove()
-    return
-  }
-  const panel = document.createElement('div')
-  panel.id = 'bk-panel'
-  document.body.appendChild(panel)
-  render()
-  if (snap === null) void fetchNow()
+/**
+ * Das Panel wird **einmal** aufgebaut und danach nur noch aufgefrischt.
+ *
+ * Vorher warf `render()` den Inhalt jede Sekunde weg und baute ihn neu. Für
+ * die Zahlen ging das gut, für die Bedienelemente nicht: ein aufgeklapptes
+ * Auswahlfeld gehört dem Element, und wenn das Element verschwindet,
+ * verschwindet auch die Liste. Das Dropdown für den Zielzeit-Modus klappte
+ * deshalb sofort wieder zu — man konnte es nicht bedienen.
+ *
+ * Die Bedienelemente stehen jetzt fest, `refresh()` schreibt nur noch Texte
+ * fort, die sich wirklich ändern.
+ */
+interface Panel {
+  root: HTMLElement
+  who: HTMLElement
+  mode: HTMLSelectElement
+  target: HTMLInputElement
+  load: HTMLButtonElement
+  out: HTMLElement
+  note: HTMLElement
 }
 
-function field(
-  parent: HTMLElement,
-  label: string,
-  value: string,
-  onCommit: (v: string) => void,
-  type = 'text',
-): void {
+let panel: Panel | null = null
+
+function labelled(parent: HTMLElement, text: string, control: HTMLElement): void {
   const l = document.createElement('label')
-  l.textContent = label
-  const i = document.createElement('input')
-  i.type = type
-  i.value = value
-  // Übernommen wird beim Verlassen des Feldes, nicht bei jedem Tastendruck —
-  // sonst ginge pro Zeichen eine Anfrage an WarEra.
-  i.addEventListener('change', () => onCommit(i.value))
-  i.addEventListener('blur', () => onCommit(i.value))
-  l.appendChild(i)
+  l.textContent = text
+  l.appendChild(control)
   parent.appendChild(l)
 }
 
-function render(): void {
-  const panel = document.getElementById('bk-panel')
-  if (panel === null) return
-  const active = document.activeElement
-  if (active instanceof HTMLElement && panel.contains(active) && active.tagName === 'INPUT') return
+function buildPanel(): Panel {
+  const root = document.createElement('div')
+  root.id = 'bk-panel'
 
-  panel.textContent = ''
   const h = document.createElement('h2')
   h.textContent = T('title')
-  panel.appendChild(h)
+  root.appendChild(h)
 
   const who = document.createElement('div')
   who.className = 'bk-who'
-  const name = snap?.user.username ?? settings.username
-  who.innerHTML =
-    name === ''
-      ? `<span>—</span>`
-      : `<b>${name}</b><span>${T('detected')}</span>`
-  panel.appendChild(who)
+  root.appendChild(who)
 
-  field(
-    panel,
-    T('target'),
-    settings.targetTime,
-    (v) => {
-      settings = normalize({ ...settings, targetTime: v })
-      save()
-      render()
-      paintBars()
-    },
-    'time',
-  )
+  const target = document.createElement('input')
+  target.type = 'time'
+  target.value = settings.targetTime
+  // Übernommen wird beim Verlassen des Feldes, nicht bei jedem Tastendruck.
+  const commitTarget = () => {
+    if (target.value === settings.targetTime) return
+    settings = normalize({ ...settings, targetTime: target.value })
+    save()
+    refresh()
+    paintBars()
+  }
+  target.addEventListener('change', commitTarget)
+  target.addEventListener('blur', commitTarget)
+  labelled(root, T('target'), target)
 
-  const ml = document.createElement('label')
-  ml.textContent = T('mode')
-  const sel = document.createElement('select')
+  const mode = document.createElement('select')
   for (const [value, text] of [
     ['clock', T('modeClock')],
     ['debuff', T('modeDebuff')],
     ['debuff_hour', T('modeDebuffHour')],
   ] as const) {
-    const o = document.createElement('option')
-    o.value = value
-    o.textContent = text
-    o.selected = settings.targetMode === value
-    sel.appendChild(o)
+    const option = document.createElement('option')
+    option.value = value
+    option.textContent = text
+    option.selected = settings.targetMode === value
+    mode.appendChild(option)
   }
-  sel.addEventListener('change', () => {
-    settings = normalize({ ...settings, targetMode: sel.value as TargetMode })
+  mode.addEventListener('change', () => {
+    settings = normalize({ ...settings, targetMode: mode.value as TargetMode })
     save()
-    render()
+    refresh()
     paintBars()
   })
-  ml.appendChild(sel)
-  panel.appendChild(ml)
+  labelled(root, T('mode'), mode)
 
   const load = document.createElement('button')
   load.className = 'bk-do'
   load.type = 'button'
-  load.textContent = busy ? T('loading') : T('load')
-  load.disabled = busy
   load.addEventListener('click', () => void fetchNow())
-  panel.appendChild(load)
+  root.appendChild(load)
 
-  // Die Zahlen, um die es geht.
-  const { now, state, result } = view()
   const out = document.createElement('div')
   out.className = 'bk-out'
-
-  const target = document.createElement('div')
-  target.className = 'bk-row'
-  target.innerHTML = `<span>${T('hint')}</span><b>${formatClock(state.params.target, zoneOr(settings.timezone))}</b>`
-  out.appendChild(target)
-
-  for (const br of result.bars) {
-    if (br.bar.max <= 0) continue
-    const row = document.createElement('div')
-    row.className = 'bk-row'
-    const label = br.bar.label
-    if (br.hasCurrent && br.current < br.safe.floor) {
-      row.classList.add('bk-short')
-      const at = br.fullAt === null ? '—' : formatClock(br.fullAt, zoneOr(settings.timezone))
-      row.innerHTML = `<span>${label}</span><b>${T('fullAt')} ${at}</b>`
-    } else {
-      const value = br.hasCurrent ? br.leftSafe : br.safe.budget
-      row.innerHTML = `<span>${label}</span><b>${T('spend')} ${num(value)}</b>`
-    }
-    out.appendChild(row)
-  }
-  panel.appendChild(out)
+  root.appendChild(out)
 
   const note = document.createElement('div')
   note.className = 'bk-note'
-  if (status !== '') {
-    note.classList.add('bk-bad')
-    note.textContent = status
-  } else if (findFills() === null) {
-    note.textContent = T('noBars')
-  } else {
-    note.textContent = `${formatClock(now, zoneOr(settings.timezone))}`
+  root.appendChild(note)
+
+  document.body.appendChild(root)
+  return { root, who, mode, target, load, out, note }
+}
+
+function togglePanel(): void {
+  if (panel !== null) {
+    panel.root.remove()
+    panel = null
+    return
   }
-  panel.appendChild(note)
+  panel = buildPanel()
+  refresh()
+  if (snap === null) void fetchNow()
+}
+
+/** Nur die Texte, die sich ändern. Kein Element wird ersetzt. */
+function refresh(): void {
+  if (panel === null) return
+  const zone = zoneOr(settings.timezone)
+
+  const name = snap?.user.username ?? settings.username
+  panel.who.textContent = ''
+  if (name === '') {
+    const dash = document.createElement('span')
+    dash.textContent = '—'
+    panel.who.appendChild(dash)
+  } else {
+    const b = document.createElement('b')
+    b.textContent = name
+    const hint = document.createElement('span')
+    hint.textContent = T('detected')
+    panel.who.append(b, hint)
+  }
+
+  panel.load.textContent = busy ? T('loading') : T('load')
+  panel.load.disabled = busy
+
+  const { now, state, result } = view()
+  panel.out.textContent = ''
+  panel.out.appendChild(row(T('hint'), formatClock(state.params.target, zone), false))
+  for (const br of result.bars) {
+    if (br.bar.max <= 0) continue
+    if (br.hasCurrent && br.current < br.safe.floor) {
+      const at = br.fullAt === null ? '—' : formatClock(br.fullAt, zone)
+      panel.out.appendChild(row(br.bar.label, `${T('fullAt')} ${at}`, true))
+    } else {
+      const value = br.hasCurrent ? br.leftSafe : br.safe.budget
+      panel.out.appendChild(row(br.bar.label, `${T('spend')} ${num(value)}`, false))
+    }
+  }
+
+  panel.note.classList.toggle('bk-bad', status !== '')
+  panel.note.textContent =
+    status !== '' ? status : findFills() === null ? T('noBars') : formatClock(now, zone)
+}
+
+/** Eine Zeile „Beschriftung — Wert“. Ohne innerHTML: die Werte sind Fremdtext. */
+function row(label: string, value: string, short: boolean): HTMLElement {
+  const el = document.createElement('div')
+  el.className = short ? 'bk-row bk-short' : 'bk-row'
+  const l = document.createElement('span')
+  l.textContent = label
+  const v = document.createElement('b')
+  v.textContent = value
+  el.append(l, v)
+  return el
 }
 
 // ---------------------------------------------------------------- Start
@@ -552,7 +575,7 @@ function boot(): void {
       lastTick = tick
       void fetchNow()
     }
-    render()
+    refresh()
   }, 1000)
 
   ensureButton()

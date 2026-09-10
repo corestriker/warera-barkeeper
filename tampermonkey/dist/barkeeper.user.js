@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         War Era - Barkeeper
 // @namespace    https://barkeeper.c0re.ninja/
-// @version      0.2.0
+// @version      0.2.1
 // @description  Shades the health and hunger bars by how far you may spend them down.
 // @description:de  Färbt die Leisten für Leben und Hunger danach ein, wie weit du sie leerspielen darfst.
 // @author       corestriker
@@ -957,12 +957,12 @@
 		const id = detectUserId();
 		if (id === "") {
 			status = T("noUser");
-			render();
+			refresh();
 			return;
 		}
 		busy = true;
 		status = "";
-		render();
+		refresh();
 		try {
 			const got = await fetchSnapshot("", id, {
 				baseUrl: settings.api.baseUrl,
@@ -985,7 +985,7 @@
 			status = err instanceof WareraError ? err.code === "notFound" ? T("notFound") : err.code === "ambiguous" ? T("ambiguous") : T("offline") : T("offline");
 		} finally {
 			busy = false;
-			render();
+			refresh();
 		}
 	}
 	/**
@@ -1166,115 +1166,137 @@
 		if (bell?.parentElement != null) bell.parentElement.insertBefore(button, bell);
 		else menu.appendChild(button);
 	}
-	function togglePanel() {
-		const open = document.getElementById("bk-panel");
-		if (open !== null) {
-			open.remove();
-			return;
-		}
-		const panel = document.createElement("div");
-		panel.id = "bk-panel";
-		document.body.appendChild(panel);
-		render();
-		if (snap === null) fetchNow();
-	}
-	function field(parent, label, value, onCommit, type = "text") {
+	var panel = null;
+	function labelled(parent, text, control) {
 		const l = document.createElement("label");
-		l.textContent = label;
-		const i = document.createElement("input");
-		i.type = type;
-		i.value = value;
-		i.addEventListener("change", () => onCommit(i.value));
-		i.addEventListener("blur", () => onCommit(i.value));
-		l.appendChild(i);
+		l.textContent = text;
+		l.appendChild(control);
 		parent.appendChild(l);
 	}
-	function render() {
-		const panel = document.getElementById("bk-panel");
-		if (panel === null) return;
-		const active = document.activeElement;
-		if (active instanceof HTMLElement && panel.contains(active) && active.tagName === "INPUT") return;
-		panel.textContent = "";
+	function buildPanel() {
+		const root = document.createElement("div");
+		root.id = "bk-panel";
 		const h = document.createElement("h2");
 		h.textContent = T("title");
-		panel.appendChild(h);
+		root.appendChild(h);
 		const who = document.createElement("div");
 		who.className = "bk-who";
-		const name = snap?.user.username ?? settings.username;
-		who.innerHTML = name === "" ? `<span>—</span>` : `<b>${name}</b><span>${T("detected")}</span>`;
-		panel.appendChild(who);
-		field(panel, T("target"), settings.targetTime, (v) => {
+		root.appendChild(who);
+		const target = document.createElement("input");
+		target.type = "time";
+		target.value = settings.targetTime;
+		const commitTarget = () => {
+			if (target.value === settings.targetTime) return;
 			settings = normalize({
 				...settings,
-				targetTime: v
+				targetTime: target.value
 			});
 			save();
-			render();
+			refresh();
 			paintBars();
-		}, "time");
-		const ml = document.createElement("label");
-		ml.textContent = T("mode");
-		const sel = document.createElement("select");
+		};
+		target.addEventListener("change", commitTarget);
+		target.addEventListener("blur", commitTarget);
+		labelled(root, T("target"), target);
+		const mode = document.createElement("select");
 		for (const [value, text] of [
 			["clock", T("modeClock")],
 			["debuff", T("modeDebuff")],
 			["debuff_hour", T("modeDebuffHour")]
 		]) {
-			const o = document.createElement("option");
-			o.value = value;
-			o.textContent = text;
-			o.selected = settings.targetMode === value;
-			sel.appendChild(o);
+			const option = document.createElement("option");
+			option.value = value;
+			option.textContent = text;
+			option.selected = settings.targetMode === value;
+			mode.appendChild(option);
 		}
-		sel.addEventListener("change", () => {
+		mode.addEventListener("change", () => {
 			settings = normalize({
 				...settings,
-				targetMode: sel.value
+				targetMode: mode.value
 			});
 			save();
-			render();
+			refresh();
 			paintBars();
 		});
-		ml.appendChild(sel);
-		panel.appendChild(ml);
+		labelled(root, T("mode"), mode);
 		const load = document.createElement("button");
 		load.className = "bk-do";
 		load.type = "button";
-		load.textContent = busy ? T("loading") : T("load");
-		load.disabled = busy;
 		load.addEventListener("click", () => void fetchNow());
-		panel.appendChild(load);
-		const { now, state, result } = view();
+		root.appendChild(load);
 		const out = document.createElement("div");
 		out.className = "bk-out";
-		const target = document.createElement("div");
-		target.className = "bk-row";
-		target.innerHTML = `<span>${T("hint")}</span><b>${formatClock(state.params.target, zoneOr(settings.timezone))}</b>`;
-		out.appendChild(target);
-		for (const br of result.bars) {
-			if (br.bar.max <= 0) continue;
-			const row = document.createElement("div");
-			row.className = "bk-row";
-			const label = br.bar.label;
-			if (br.hasCurrent && br.current < br.safe.floor) {
-				row.classList.add("bk-short");
-				const at = br.fullAt === null ? "—" : formatClock(br.fullAt, zoneOr(settings.timezone));
-				row.innerHTML = `<span>${label}</span><b>${T("fullAt")} ${at}</b>`;
-			} else {
-				const value = br.hasCurrent ? br.leftSafe : br.safe.budget;
-				row.innerHTML = `<span>${label}</span><b>${T("spend")} ${num(value)}</b>`;
-			}
-			out.appendChild(row);
-		}
-		panel.appendChild(out);
+		root.appendChild(out);
 		const note = document.createElement("div");
 		note.className = "bk-note";
-		if (status !== "") {
-			note.classList.add("bk-bad");
-			note.textContent = status;
-		} else if (findFills() === null) note.textContent = T("noBars");
-		else note.textContent = `${formatClock(now, zoneOr(settings.timezone))}`;
-		panel.appendChild(note);
+		root.appendChild(note);
+		document.body.appendChild(root);
+		return {
+			root,
+			who,
+			mode,
+			target,
+			load,
+			out,
+			note
+		};
+	}
+	function togglePanel() {
+		if (panel !== null) {
+			panel.root.remove();
+			panel = null;
+			return;
+		}
+		panel = buildPanel();
+		refresh();
+		if (snap === null) fetchNow();
+	}
+	/** Nur die Texte, die sich ändern. Kein Element wird ersetzt. */
+	function refresh() {
+		if (panel === null) return;
+		const zone = zoneOr(settings.timezone);
+		const name = snap?.user.username ?? settings.username;
+		panel.who.textContent = "";
+		if (name === "") {
+			const dash = document.createElement("span");
+			dash.textContent = "—";
+			panel.who.appendChild(dash);
+		} else {
+			const b = document.createElement("b");
+			b.textContent = name;
+			const hint = document.createElement("span");
+			hint.textContent = T("detected");
+			panel.who.append(b, hint);
+		}
+		panel.load.textContent = busy ? T("loading") : T("load");
+		panel.load.disabled = busy;
+		const { now, state, result } = view();
+		panel.out.textContent = "";
+		panel.out.appendChild(row(T("hint"), formatClock(state.params.target, zone), false));
+		for (const br of result.bars) {
+			if (br.bar.max <= 0) continue;
+			if (br.hasCurrent && br.current < br.safe.floor) {
+				const at = br.fullAt === null ? "—" : formatClock(br.fullAt, zone);
+				panel.out.appendChild(row(br.bar.label, `${T("fullAt")} ${at}`, true));
+			} else {
+				const value = br.hasCurrent ? br.leftSafe : br.safe.budget;
+				panel.out.appendChild(row(br.bar.label, `${T("spend")} ${num(value)}`, false));
+			}
+		}
+		panel.note.classList.toggle("bk-bad", status !== "");
+		panel.note.textContent = status !== "" ? status : findFills() === null ? T("noBars") : formatClock(now, zone);
+	}
+	/** Eine Zeile „Beschriftung — Wert“. Ohne innerHTML: die Werte sind Fremdtext. */
+	function row(label, value, short) {
+		const el = document.createElement("div");
+		el.className = short ? "bk-row bk-short" : "bk-row";
+		const l = document.createElement("span");
+		l.textContent = label;
+		const v = document.createElement("b");
+		v.textContent = value;
+		el.append(l, v);
+		return el;
 	}
 	function boot() {
 		lang = (navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
@@ -1297,7 +1319,7 @@
 				lastTick = tick;
 				fetchNow();
 			}
-			render();
+			refresh();
 		}, 1e3);
 		ensureButton();
 		fetchNow();
