@@ -111,6 +111,7 @@ export const de: Lang = {
     'menu.f.notify.help': 'Meldung, wenn eine Leiste wieder bei 100 % ist oder der Pillen-Debuff endet — nur solange diese Seite offen ist',
     'menu.f.notify.denied': 'im Browser abgelehnt — dort für diese Seite wieder erlauben',
     'alert.full': '{0} ist wieder bei 100 %',
+    'alert.overflow': '{0} läuft über: der nächste Tick verschenkt {1}',
     'alert.debuff': 'Der Pillen-Debuff ist abgelaufen',
     'menu.f.hint_window': 'Tipp vor dem Tick (Minuten)',
     'menu.f.hint_window.help':
