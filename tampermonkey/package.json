@@ -1,0 +1,17 @@
+{
+  "name": "warera-barkeeper-userscript",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "dist-check": "node scripts/dist-check.mjs",
+    "check": "npm run typecheck && npm run build && npm run dist-check",
+    "version": "npm run build && git add dist/barkeeper.user.js"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

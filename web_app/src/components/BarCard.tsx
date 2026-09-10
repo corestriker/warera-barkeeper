@@ -9,69 +9,16 @@
  * trotzdem. Wer eine Zone ändert, ändert sie an drei Stellen mit: hier, in
  * `Legend` und in der Liste im Erklärabschnitt.
  */
-import type { CSSProperties } from 'react'
 import { num, pct } from '../lib/format'
 import type { Translate } from '../lib/i18n'
 import type { BarResult, Result } from '../lib/regen'
 import { formatClock } from '../lib/zone'
+import { ZONE_STYLE, zonesFor, type ZoneKind } from '../lib/zones'
+
+// Die Einteilung steht in `lib/zones`, damit auch das Userscript sie nutzen
+// kann; von hier aus bleibt sie erreichbar, wo sie bisher importiert wurde.
+export { ZONE_STYLE, zonesFor, type ZoneKind }
 import { Card } from './ui'
-
-export type ZoneKind = 'keep' | 'spendable' | 'missing' | 'used'
-
-/**
- * Die vier Zonen. Jede setzt **zwei** Eigenschaften: `backgroundColor` als
- * Vollton und darüber `backgroundImage` mit dem Muster. Das ist der Rückfall
- * für alte Browser — kennt einer `color-mix()` nicht, verwirft er das Muster
- * und die Zone bleibt trotzdem farbig sichtbar, statt zu verschwinden.
- */
-export const ZONE_STYLE: Record<ZoneKind, CSSProperties> = {
-  keep: { backgroundColor: 'var(--color-keep)' },
-  spendable: {
-    backgroundColor: 'var(--color-safe)',
-    backgroundImage:
-      'repeating-linear-gradient(45deg, color-mix(in srgb, var(--color-safe) 100%, transparent) 0 6px, color-mix(in srgb, var(--color-safe) 62%, transparent) 6px 12px)',
-  },
-  missing: {
-    backgroundColor: 'var(--color-danger)',
-    backgroundImage:
-      'repeating-linear-gradient(-45deg, color-mix(in srgb, var(--color-danger) 100%, transparent) 0 5px, color-mix(in srgb, var(--color-danger) 55%, transparent) 5px 10px)',
-  },
-  used: {
-    backgroundColor: 'var(--color-ground)',
-    backgroundImage:
-      'radial-gradient(circle at 3px 3px, color-mix(in srgb, var(--color-line-soft) 100%, transparent) 1px, transparent 1.4px)',
-    backgroundSize: '6px 6px',
-  },
-}
-
-/** Die Zonen einer Leiste, in Anteilen von 0 bis 1. */
-export function zonesFor(br: BarResult): { kind: ZoneKind; share: number }[] {
-  const max = br.bar.max
-  if (max <= 0) return []
-  const clamp = (v: number) => Math.min(1, Math.max(0, v / max))
-  const floor = clamp(br.safe.floor)
-
-  if (!br.hasCurrent) {
-    return [
-      { kind: 'keep', share: floor },
-      { kind: 'spendable', share: 1 - floor },
-    ]
-  }
-  const current = clamp(br.current)
-  if (current < floor) {
-    // Fehlbetrag: bis zum Zielwert reicht die Regeneration nicht mehr.
-    return [
-      { kind: 'keep', share: current },
-      { kind: 'missing', share: floor - current },
-      { kind: 'used', share: 1 - floor },
-    ]
-  }
-  return [
-    { kind: 'keep', share: floor },
-    { kind: 'spendable', share: current - floor },
-    { kind: 'used', share: 1 - current },
-  ]
-}
 
 function Gauge({ t, br }: { t: Translate; br: BarResult }) {
   const zones = zonesFor(br)

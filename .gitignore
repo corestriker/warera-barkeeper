@@ -1,6 +1,12 @@
 # Build-Ergebnisse
 dist/
 node_modules/
+
+# Ausnahme: das gebaute Userscript gehört ins Repo. Tampermonkey installiert
+# und aktualisiert es über die Roh-URL aus @downloadURL/@updateURL — ohne die
+# Datei im Repo zeigt der Header ins Leere.
+!tampermonkey/dist/
+!tampermonkey/dist/barkeeper.user.js
 barkeeper
 barkeeper.exe
 # `go build .` im Modulordner benennt das Binary nach dem Ordner
