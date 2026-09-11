@@ -19,8 +19,8 @@ import { TargetLine, TopBar, type ApiState } from './components/Header'
 import { HintCard } from './components/HintCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { STATUS_TTL, StatusLine } from './components/StatusLine'
-import { dueAlerts } from './lib/alerts'
-import { fmtDurationShort } from './lib/format'
+import { dueAlerts, predictAlerts, type Alert } from './lib/alerts'
+import { fmtDurationShort, num } from './lib/format'
 import { printer } from './lib/i18n'
 import { APP_NAME, GAME_URL, REPO_URL } from './lib/meta'
 import { tickAfter } from './lib/regen'
@@ -29,6 +29,7 @@ import {
   defaults,
   loadSettings,
   normalize,
+  hintWindowMs,
   saveSettings,
   timeoutMs,
   type Settings,
@@ -42,6 +43,21 @@ interface StatusMsg {
   args: (string | number)[]
   kind: 'ok' | 'error' | 'note'
   at: number
+}
+
+/** Der Text einer Meldung. Der Überlauf nennt die Menge, die sonst verfällt. */
+function alertText(
+  t: (id: string, ...args: (string | number)[]) => string,
+  alert: Alert,
+): string {
+  switch (alert.kind) {
+    case 'full':
+      return t('alert.full', alert.bar ?? '')
+    case 'overflow':
+      return t('alert.overflow', alert.bar ?? '', num(alert.lost ?? 0))
+    default:
+      return t('alert.debuff')
+  }
 }
 
 /**
@@ -75,6 +91,10 @@ export function App() {
   // wurde.
   const armedAt = useRef(Date.now())
   const fired = useRef<Set<string>>(new Set())
+  // Die vorhergesagten Ereignisse, je Platz das jeweils letzte. Ohne dieses
+  // Gedächtnis käme nie eine Meldung an: `fullAt` liegt immer in der Zukunft
+  // und `debuffEnd` verschwindet genau dann, wenn der Debuff abläuft.
+  const pending = useRef<Map<string, Alert>>(new Map())
   // Der Spielername, für den der Snapshot geholt wurde — klein geschrieben.
   const [snapFor, setSnapFor] = useState('')
   const [api, setApi] = useState<ApiState>(apiMode(stored.settings) ? 'loading' : 'off')
@@ -206,15 +226,22 @@ export function App() {
     if (Notification.permission === 'default') void Notification.requestPermission()
   }, [settings.notify])
 
-  // Fällige Meldungen zeigen. Die Entscheidung, was fällig ist, steckt in
-  // `dueAlerts` — hier wird nur zugestellt.
+  // Fällige Meldungen zeigen. Was vorhersehbar ist, sagt `predictAlerts`, was
+  // davon jetzt dran ist, `dueAlerts` — hier wird nur gemerkt und zugestellt.
   useEffect(() => {
-    if (!settings.notify) return
+    if (!settings.notify) {
+      pending.current.clear()
+      return
+    }
+
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
 
-    for (const alert of dueAlerts(state, result, now, armedAt.current, fired.current)) {
+    // Erst zustellen, dann neu merken. Andersherum überschriebe die frische
+    // Vorhersage — deren Zeitpunkt mit `now` weiterrückt — genau die, die
+    // gerade fällig geworden ist.
+    for (const alert of dueAlerts(pending.current.values(), now, armedAt.current, fired.current)) {
       fired.current.add(alert.key)
-      const text = alert.kind === 'full' ? t('alert.full', alert.bar ?? '') : t('alert.debuff')
+      const text = alertText(t, alert)
       try {
         new Notification(APP_NAME, { body: text, tag: alert.key })
       } catch {
@@ -222,7 +249,11 @@ export function App() {
         // es beim Tab-Titel — kein Grund, die Seite zu stören.
       }
     }
-  }, [now, settings.notify, state, result, t])
+
+    // Alle drei Ereignisse sind nur *vorher* bekannt — deshalb das Gedächtnis.
+    const lead = hintWindowMs(settings)
+    for (const a of predictAlerts(state, result, now, lead)) pending.current.set(a.slot, a)
+  }, [now, settings, state, result, t])
 
   // Der Tab-Titel trägt die Restzeit, damit man sie auch ohne Erlaubnis und
   // ohne hinzuschalten im Blick hat.

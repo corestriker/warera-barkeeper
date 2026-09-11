@@ -116,6 +116,7 @@ export const en: Lang = {
     'menu.f.notify.help': 'A message when a bar is back at 100% or the pill debuff ends — only while this page is open',
     'menu.f.notify.denied': 'blocked by the browser — allow it again for this page there',
     'alert.full': '{0} is back at 100%',
+    'alert.overflow': '{0} is overflowing: the next tick wastes {1}',
     'alert.debuff': 'The pill debuff has ended',
     'menu.f.hint_window': 'Tip before the tick (minutes)',
     'menu.f.hint_window.help':

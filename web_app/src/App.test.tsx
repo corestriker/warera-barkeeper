@@ -185,6 +185,12 @@ describe('Abruf', () => {
 
   it('trägt die Restzeit im Tab-Titel', async () => {
     // Auch ohne Benachrichtigungs-Erlaubnis soll man die Frist im Blick haben.
+    //
+    // Die Uhr wird festgehalten: die Zusicherung erwartet ein Stunden-Feld,
+    // und in der letzten Stunde vor der Zielzeit gibt es keins. Ohne das
+    // scheiterte der Test jeden Tag zwischen 13:05 und 14:05 Ortszeit.
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+    vi.setSystemTime(Date.parse('2026-09-10T08:00:00Z'))
     saveSettings({ ...defaults(), language: 'de', timezone: 'Europe/Berlin', targetMode: 'clock' })
 
     render(<App />)
@@ -308,5 +314,149 @@ describe('Vorschlagsliste am Namensfeld', () => {
 
     await waitFor(() => expect(container.textContent).not.toContain('Mnestra'))
     expect(usernameField(container).value).toBe('Mnemosyne')
+  })
+})
+
+/**
+ * Meldungen — die Stelle, an der die Seite lange nichts zustellte.
+ *
+ * Die reine Entscheidung in `lib/alerts` war richtig und geprüft; sie bekam
+ * nur nie ein fälliges Ereignis zu sehen. `fullAt` zählt ab dem ersten Tick
+ * nach `Params.base`, und `base` ist `now` — der Zeitpunkt lag damit immer in
+ * der Zukunft. Deshalb prüft das hier durch die ganze Seite hindurch.
+ */
+describe('Meldungen', () => {
+  const TICK = Date.parse('2026-09-10T12:00:00Z')
+  let sent: { body: string; tag: string }[] = []
+  let asked = 0
+
+  function stubNotification(permission: NotificationPermission): void {
+    sent = []
+    asked = 0
+    class FakeNotification {
+      static permission: NotificationPermission = permission
+      static requestPermission(): Promise<NotificationPermission> {
+        asked += 1
+        return Promise.resolve(permission)
+      }
+      constructor(_title: string, options?: { body?: string; tag?: string }) {
+        sent.push({ body: options?.body ?? '', tag: options?.tag ?? '' })
+      }
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+  }
+
+  /** Ein Profil, dessen Leben genau einen Tick vor „voll“ steht. */
+  function stubApi(health: number): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.includes('search.searchAnything')) return json({ userIds: ['u1'] })
+        if (url.includes('user.getUserLite')) {
+          return json({
+            ...USER,
+            skills: {
+              health: { level: 4, total: 140, currentBarValue: health, hourlyBarRegen: 14 },
+              hunger: { level: 4, total: 7, currentBarValue: 7, hourlyBarRegen: 0.7 },
+            },
+          })
+        }
+        return json({ nextRegenAt: new Date(TICK).toISOString() })
+      }),
+    )
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+    vi.setSystemTime(TICK - 5_000)
+  })
+
+  it('meldet, wenn eine Leiste wieder voll ist', async () => {
+    stubNotification('granted')
+    stubApi(126)
+    saveSettings({
+      ...defaults(),
+      username: 'c0re',
+      language: 'de',
+      timezone: 'Europe/Berlin',
+      notify: true,
+    })
+
+    render(<App />)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(sent).toHaveLength(0)
+
+    // Über die Tickgrenze hinweg.
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.body).toContain('HEALTH')
+  })
+
+  it('warnt vor dem Tick, der die Gutschrift verschenkt', async () => {
+    stubNotification('granted')
+    // Leben bereits voll: der Tick um 12:00 schreibt 14 gut und deckelt bei
+    // 140 — die ganze Gutschrift verfällt.
+    stubApi(140)
+    saveSettings({
+      ...defaults(),
+      username: 'c0re',
+      language: 'de',
+      timezone: 'Europe/Berlin',
+      notify: true,
+      hintWindowMinutes: 15,
+    })
+
+    // Kurz vor dem Vorlauf: noch nichts.
+    vi.setSystemTime(TICK - 16 * 60_000)
+    render(<App />)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(sent).toEqual([])
+
+    // In den Vorlauf hinein.
+    await vi.advanceTimersByTimeAsync(90_000)
+
+    const warn = sent.filter((n) => n.tag.startsWith('overflow:health'))
+    expect(warn).toHaveLength(1)
+    expect(warn[0]!.body).toContain('HEALTH')
+    // Die verschenkte Menge steht in der Meldung.
+    expect(warn[0]!.body).toContain('14')
+  })
+
+  it('meldet nichts, solange die Erlaubnis fehlt', async () => {
+    stubNotification('denied')
+    stubApi(126)
+    saveSettings({
+      ...defaults(),
+      username: 'c0re',
+      language: 'de',
+      timezone: 'Europe/Berlin',
+      notify: true,
+    })
+
+    render(<App />)
+    await vi.advanceTimersByTimeAsync(11_000)
+    expect(sent).toEqual([])
+  })
+
+  it('fragt die Erlaubnis aus dem Klick heraus — nicht erst aus einem Effekt', async () => {
+    stubNotification('default')
+    stubApi(140)
+    saveSettings({ ...defaults(), username: 'c0re', language: 'de', timezone: 'Europe/Berlin' })
+
+    const { container } = render(<App />)
+    await vi.advanceTimersByTimeAsync(1_000)
+    fireEvent.click(settingsButton(container, 'Einstellungen'))
+    const more = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Mehr einstellen'),
+    )
+    if (more !== undefined) fireEvent.click(more)
+
+    const on = [...container.querySelectorAll('button')].filter((b) => b.textContent === 'an')
+    // Der Schalter „Benachrichtigen“ ist der letzte „an“-Knopf der Seite.
+    fireEvent.click(on[on.length - 1]!)
+
+    expect(asked).toBeGreaterThan(0)
   })
 })

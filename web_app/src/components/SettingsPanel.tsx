@@ -638,7 +638,17 @@ export function SettingsPanel({
                 { value: 'on', label: t('menu.v.on') },
                 { value: 'off', label: t('menu.v.off') },
               ]}
-              onSelect={(value) => onChange({ notify: value === 'on' })}
+              onSelect={(value) => {
+                const on = value === 'on'
+                // Die Erlaubnis muss **aus dem Klick heraus** erfragt werden.
+                // Safari verlangt dafür eine Nutzeraktion, und ein Effekt, der
+                // erst nach dem Rendern läuft, ist keine mehr — dort kam die
+                // Abfrage sonst nie an.
+                if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                  void Notification.requestPermission()
+                }
+                onChange({ notify: on })
+              }}
             />
             <Row label={t('menu.f.language')} help={t('menu.f.language.help')} htmlFor={languageId}>
               <select
